@@ -5,6 +5,14 @@ export type Video = {
   description: string;
   thumbnail: string;
   published?: string;
+  /** Length in seconds, read from the playlist page badge or the watch page. */
+  durationSeconds?: number;
+  views?: number;
+  /** YouTube's own category, e.g. "Education". Only known after watch-page enrichment. */
+  category?: string;
+  /** Creator-defined chapter titles, when the description carries timestamps. */
+  chapters?: string[];
+  keywords?: string[];
 };
 
 export type FeedTemplate = "stretch" | "balanced" | "kids";
@@ -47,6 +55,20 @@ const distractionTerms = /shocking|insane|crazy|unbelievable|must watch|viral|se
 
 const clamp = (value: number, min = 1, max = 99) => Math.max(min, Math.min(max, Math.round(value)));
 
+const studiousCategories = /education|science|howto|how-to/i;
+const entertainmentCategories = /entertainment|gaming|comedy|music|sports/i;
+
+export const SHORT_VIDEO_SECONDS = 90;
+export const LONG_VIDEO_SECONDS = 25 * 60;
+
+export function formatDuration(seconds?: number) {
+  if (!seconds || seconds <= 0) return "";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}` : `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
 export function rankVideos(videos: Video[], mastery: number, completed: string[], template: FeedTemplate = "stretch"): RankedVideo[] {
   const completedIds = new Set(completed);
 
@@ -63,14 +85,22 @@ export function rankVideos(videos: Video[], mastery: number, completed: string[]
       const titleWords = video.title.trim().split(/\s+/).length;
       const shoutiness = (video.title.match(/[!?]/g)?.length ?? 0) * 4 + (video.title === video.title.toUpperCase() ? 14 : 0);
 
-      const difficulty = clamp(48 + (hasHard ? 20 : 0) - (hasGentle ? 11 : 0) + Math.min(index * 1.4, 16), 25, 96);
+      // Metadata signals. Duration and category come from YouTube itself, so they outrank keyword guesses.
+      const seconds = video.durationSeconds ?? 0;
+      const isShort = seconds > 0 && seconds < SHORT_VIDEO_SECONDS;
+      const isLong = seconds >= LONG_VIDEO_SECONDS;
+      const isStudious = !!video.category && studiousCategories.test(video.category);
+      const isEntertainment = !!video.category && entertainmentCategories.test(video.category);
+      const hasChapters = (video.chapters?.length ?? 0) >= 3;
+
+      const difficulty = clamp(48 + (hasHard ? 20 : 0) - (hasGentle ? 11 : 0) + (isLong ? 6 : 0) - (isShort ? 8 : 0) + Math.min(index * 1.4, 16), 25, 96);
       const gap = Math.abs(difficulty - mastery);
       const learnability = clamp(100 - gap * 2.2, 20, 99);
-      const depth = clamp(50 + (hasDepth ? 22 : 0) + (hasHard ? 10 : 0) + (video.description.length > 180 ? 8 : 0) - (hasDistraction ? 18 : 0), 18, 98);
-      const clarity = clamp(68 + (hasGentle ? 18 : 0) + (hasPractical ? 8 : 0) - (titleWords > 15 ? 8 : 0) - shoutiness / 2, 22, 98);
-      const focus = clamp(88 - (hasDistraction ? 38 : 0) - shoutiness + (hasDepth ? 6 : 0), 12, 99);
-      const buildValue = clamp(42 + (hasPractical ? 38 : 0) + (hasGentle ? 8 : 0) + (video.description.length > 120 ? 6 : 0) - (hasDistraction ? 14 : 0), 14, 98);
-      const curiosity = clamp(45 + (hasCuriosity ? 32 : 0) + (hasHard ? 12 : 0) + (hasDepth ? 8 : 0) - (hasDistraction ? 12 : 0), 18, 99);
+      const depth = clamp(50 + (hasDepth ? 22 : 0) + (hasHard ? 10 : 0) + (video.description.length > 180 ? 8 : 0) + (isLong ? 10 : 0) - (isShort ? 22 : 0) + (isStudious ? 8 : 0) - (isEntertainment ? 8 : 0) - (hasDistraction ? 18 : 0), 18, 98);
+      const clarity = clamp(68 + (hasGentle ? 18 : 0) + (hasPractical ? 8 : 0) + (hasChapters ? 8 : 0) - (titleWords > 15 ? 8 : 0) - shoutiness / 2, 22, 98);
+      const focus = clamp(88 - (hasDistraction ? 38 : 0) - shoutiness + (hasDepth ? 6 : 0) - (isShort ? 25 : 0) - (isEntertainment ? 10 : 0) + (isStudious ? 4 : 0), 12, 99);
+      const buildValue = clamp(42 + (hasPractical ? 38 : 0) + (hasGentle ? 8 : 0) + (hasChapters ? 6 : 0) + (video.description.length > 120 ? 6 : 0) - (isShort ? 10 : 0) - (hasDistraction ? 14 : 0), 14, 98);
+      const curiosity = clamp(45 + (hasCuriosity ? 32 : 0) + (hasHard ? 12 : 0) + (hasDepth ? 8 : 0) + (isLong ? 4 : 0) - (isShort ? 10 : 0) - (hasDistraction ? 12 : 0), 18, 99);
 
       const tooHardPenalty = difficulty > mastery + 20 ? 22 : 0;
       const score = template === "kids"
@@ -88,7 +118,9 @@ export function rankVideos(videos: Video[], mastery: number, completed: string[]
       const signals = [
         hasGentle ? "Easy to start" : hasHard ? "Needs background knowledge" : "Some prior knowledge",
         hasPractical ? "Includes practical examples" : hasCuriosity ? "Explores underlying ideas" : "Builds context",
-        focus >= 78 ? "Low distraction" : focus < 55 ? "Attention-grabbing language" : "Some distraction signals",
+        isShort ? "Short clip" : focus >= 78 ? "Low distraction" : focus < 55 ? "Attention-grabbing language" : "Some distraction signals",
+        ...(hasChapters ? [`${video.chapters!.length} chapters`] : []),
+        ...(video.category ? [video.category] : []),
       ];
 
       const reason = template === "kids"

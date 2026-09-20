@@ -1,18 +1,23 @@
 # Jev Feed
 
-Jev turns a public YouTube playlist into an adaptive, distraction-free learning feed. Videos are ranked around the viewer's current learning edge, and progress is saved locally per playlist.
+Jev lets you curate your own custom video feed from YouTube. Jev's ranking decides which video comes first, you share the feed with friends or children, and progress is saved locally per playlist. Analytics on who watches a feed is the next planned capability.
 
 ## Current capabilities
 
 - Import a public YouTube playlist from its URL.
 - Analyze 10, 50, or 100 videos when the playlist contains them.
 - Validate playlist URLs and fetch the public YouTube feed server-side.
+- Read duration, view count, YouTube category, publish date, keywords and chapter titles from public YouTube pages, with no API key.
+- Sign in with just a username (no password, browser-only) and own up to five playlists.
+- Build a playlist one video at a time from any YouTube video link, remove videos, or save an editable copy of an imported playlist.
 - Rank videos through learning-edge, balanced-foundation, or child-focused perspectives.
 - Show research depth, clarity, learnability, focus quality, and recommendation reasons.
 - Play videos in a focused embedded player.
 - Adjust future recommendations from “too hard,” “just right,” and “too easy” feedback.
 - Preserve progress for each playlist in the viewer's browser.
-- Publish a separate anonymous feed URL under `/feed` with its playlist, template, and size encoded in the link.
+- Publish a separate anonymous feed URL under `/feed` with its playlist, template, and size encoded in the link. Feeds built from individual videos encode their video ids instead, so no server state is needed.
+
+Accounts and owned playlists live in the browser's `localStorage`. This is the shape of the feature for review; a server-backed account needs D1, which is not bound yet.
 
 The next planned product slice is public feed publishing: an organizer chooses a playlist and ranking template, publishes it to a Cloudflare-managed subdomain, and shares an anonymous, instantly accessible feed with an audience.
 
@@ -40,6 +45,8 @@ Unit tests live in `tests/` and run with Vitest. CI runs the same checks on ever
 
 - `app/page.tsx` — the interactive learning feed.
 - `app/api/playlist/route.ts` — public YouTube playlist ingestion.
+- `app/api/video/route.ts` — single-video metadata from public watch pages (up to 10 per request).
+- `lib/account.ts` — username accounts and owned playlists, browser-only.
 - `lib/learning.ts` — ranking and device-local progress logic.
 - `lib/youtube-playlist.ts` — playlist URL validation and feed parsing.
 
