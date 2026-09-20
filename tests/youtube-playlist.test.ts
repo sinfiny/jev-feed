@@ -8,8 +8,11 @@ import {
   playlistIdFrom,
   readTextLimited,
   unescapeXml,
+  mergeVideos,
+  videoFromNextResponse,
   videoFromOEmbed,
   videoFromPlayerResponse,
+  videoFromSearchPage,
   videoIdFrom,
   viewsToNumber,
 } from "@/lib/youtube-playlist";
@@ -241,5 +244,31 @@ describe("videoFromPlayerResponse and videoFromOEmbed", () => {
     expect(videoFromOEmbed({ title: "Only a title", author_name: "Chan", thumbnail_url: "https://i.ytimg.com/vi/hhhhhhhhhhh/hqdefault.jpg" }, "hhhhhhhhhhh"))
       .toEqual({ id: "hhhhhhhhhhh", title: "Only a title", channel: "Chan", description: "", thumbnail: "https://i.ytimg.com/vi/hhhhhhhhhhh/hqdefault.jpg" });
     expect(videoFromOEmbed({ error: "nope" }, "hhhhhhhhhhh")).toBeNull();
+  });
+});
+
+describe("datacenter-friendly sources", () => {
+  it("reads title, description, owner, views, date and chapters from a next response", () => {
+    const response = { contents: { results: [
+      { videoPrimaryInfoRenderer: { title: { runs: [{ text: "Next title" }] }, viewCount: { videoViewCountRenderer: { viewCount: { simpleText: "1,234 views" } } }, dateText: { simpleText: "Apr 28, 2017" } } },
+      { videoSecondaryInfoRenderer: { owner: { videoOwnerRenderer: { title: { runs: [{ text: "Owner" }] } } }, attributedDescription: { content: "Long description" } } },
+      { panel: { items: [{ macroMarkersListItemRenderer: { title: { simpleText: "Intro" } } }, { macroMarkersListItemRenderer: { title: { simpleText: "Proof" } } }] } },
+    ] } };
+    expect(videoFromNextResponse(response, "iiiiiiiiiii")).toMatchObject({ title: "Next title", channel: "Owner", description: "Long description", views: 1234, published: "Apr 28, 2017", chapters: ["Intro", "Proof"] });
+    expect(videoFromNextResponse({}, "iiiiiiiiiii")).toBeNull();
+  });
+
+  it("finds the matching videoRenderer on a search page and reads its length", () => {
+    const item = (videoId: string) => JSON.stringify({ videoRenderer: { videoId, title: { runs: [{ text: `Title ${videoId}` }] }, lengthText: { simpleText: "1:02:03" }, viewCountText: { simpleText: "5K views" }, ownerText: { runs: [{ text: "Owner" }] }, detailedMetadataSnippets: [{ snippetText: { runs: [{ text: "Snippet" }] } }] } }).slice(1, -1);
+    const html = `<html>{${item("other000000")}, ${item("jjjjjjjjjjj")}}</html>`;
+    expect(videoFromSearchPage(html, "jjjjjjjjjjj")).toMatchObject({ title: "Title jjjjjjjjjjj", durationSeconds: 3723, views: 5000, channel: "Owner", description: "Snippet" });
+    expect(videoFromSearchPage(html, "missing00000")).toBeNull();
+  });
+
+  it("merges partial videos with earlier sources winning", () => {
+    const fromNext = { id: "k", title: "Next", channel: "Owner", description: "Long", thumbnail: "t" };
+    const fromSearch = { id: "k", title: "Search", channel: "", description: "Snippet", thumbnail: "t", durationSeconds: 60 };
+    expect(mergeVideos("kkkkkkkkkkk", fromNext, fromSearch)).toEqual({ id: "kkkkkkkkkkk", title: "Next", channel: "Owner", description: "Long", thumbnail: "t", durationSeconds: 60 });
+    expect(mergeVideos("kkkkkkkkkkk", null, null)).toBeNull();
   });
 });

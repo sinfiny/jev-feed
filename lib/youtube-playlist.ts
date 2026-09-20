@@ -217,7 +217,7 @@ export function videoFromPlayerResponse(value: unknown, videoId: string): Video 
   const lengthSeconds = Number(details.lengthSeconds ?? micro.lengthSeconds);
   const views = Number(details.viewCount ?? micro.viewCount);
   const thumbnails = (details.thumbnail as { thumbnails?: Array<{ url?: string }> } | undefined)?.thumbnails ?? [];
-  const chapters = [...description.matchAll(/^\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[-–—|:]?\s*(.+)$/gm)].map((line) => line[1].trim()).filter(Boolean);
+  const chapters = chaptersFrom(description);
   return {
     id,
     title,
@@ -252,4 +252,89 @@ export function videoFromOEmbed(value: unknown, videoId: string): Video | null {
     description: "",
     thumbnail: typeof item.thumbnail_url === "string" ? item.thumbnail_url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
   };
+}
+
+/** Depth-first search for the first object stored under `key`. Innertube responses nest renderers unpredictably. */
+function findKey(value: unknown, key: string, depth = 0): unknown {
+  if (!value || typeof value !== "object" || depth > 40) return undefined;
+  if (!Array.isArray(value) && key in (value as Record<string, unknown>)) return (value as Record<string, unknown>)[key];
+  for (const child of Array.isArray(value) ? value : Object.values(value as Record<string, unknown>)) {
+    const found = findKey(child, key, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function collectKey(value: unknown, key: string, out: unknown[] = [], depth = 0): unknown[] {
+  if (!value || typeof value !== "object" || depth > 40) return out;
+  if (!Array.isArray(value) && key in (value as Record<string, unknown>)) out.push((value as Record<string, unknown>)[key]);
+  for (const child of Array.isArray(value) ? value : Object.values(value as Record<string, unknown>)) collectKey(child, key, out, depth + 1);
+  return out;
+}
+
+const chaptersFrom = (description: string) =>
+  [...description.matchAll(/^\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[-–—|:]?\s*(.+)$/gm)].map((line) => line[1].trim()).filter(Boolean);
+
+/**
+ * Builds a Video from the innertube `next` response, the JSON behind the watch page's info panel.
+ * It carries title, full description, owner, view count, publish date, and chapter markers, but not the
+ * length. YouTube serves it to datacenter addresses that the `player` endpoint turns away.
+ */
+export function videoFromNextResponse(value: unknown, videoId: string): Video | null {
+  const primary = findKey(value, "videoPrimaryInfoRenderer") as Record<string, unknown> | undefined;
+  const secondary = findKey(value, "videoSecondaryInfoRenderer") as Record<string, unknown> | undefined;
+  const title = textFrom(primary?.title);
+  if (!title) return null;
+  const owner = findKey(secondary?.owner, "videoOwnerRenderer") as Record<string, unknown> | undefined;
+  const attributed = findKey(secondary, "attributedDescription") as { content?: unknown } | undefined;
+  const description = typeof attributed?.content === "string" ? attributed.content : textFrom(secondary?.description);
+  const viewsText = textFrom((findKey(primary?.viewCount, "videoViewCountRenderer") as Record<string, unknown> | undefined)?.viewCount);
+  const markers = collectKey(value, "macroMarkersListItemRenderer").map((marker) => textFrom((marker as Record<string, unknown>).title)).filter(Boolean);
+  const chapters = markers.length >= 2 ? [...new Set(markers)] : chaptersFrom(description);
+  return {
+    id: videoId,
+    title,
+    channel: textFrom(owner?.title) || "YouTube",
+    description: description.slice(0, 2000),
+    thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    published: textFrom(primary?.dateText) || undefined,
+    views: viewsText ? viewsToNumber(viewsText) : undefined,
+    chapters: chapters.length >= 2 ? chapters.slice(0, 40) : undefined,
+  };
+}
+
+/**
+ * Finds one video's `videoRenderer` on a search results page for its own id. This is the cheapest
+ * datacenter-friendly source of the video's length; it also has a description snippet and view count.
+ */
+export function videoFromSearchPage(html: string, videoId: string): Video | null {
+  const renderer = rendererObjects(html, '"videoRenderer":', 40).find((item) => item.videoId === videoId);
+  if (!renderer) return null;
+  const title = textFrom(renderer.title);
+  if (!title) return null;
+  const snippet = (renderer.detailedMetadataSnippets as Array<{ snippetText?: unknown }> | undefined)?.[0]?.snippetText;
+  const viewsText = textFrom(renderer.viewCountText);
+  return {
+    id: videoId,
+    title,
+    channel: textFrom(renderer.ownerText) || textFrom(renderer.shortBylineText) || "YouTube",
+    description: textFrom(snippet),
+    thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    durationSeconds: durationToSeconds(textFrom(renderer.lengthText) || "x"),
+    views: viewsText ? viewsToNumber(viewsText) : undefined,
+  };
+}
+
+/** Merges partial videos in priority order: earlier entries win, later ones fill gaps. */
+export function mergeVideos(videoId: string, ...parts: Array<Video | null>): Video | null {
+  const present = parts.filter((part): part is Video => part !== null);
+  if (!present.length) return null;
+  const merged = { ...present[0] };
+  for (const part of present.slice(1)) {
+    for (const [key, value] of Object.entries(part) as Array<[keyof Video, Video[keyof Video]]>) {
+      const current = merged[key];
+      if (value !== undefined && value !== "" && (current === undefined || current === "")) (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return { ...merged, id: videoId };
 }

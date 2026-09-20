@@ -1,5 +1,5 @@
 import type { Video } from "@/lib/learning";
-import { parseWatchPage, readTextLimited, videoFromOEmbed, videoFromPlayerResponse, videoIdFrom } from "@/lib/youtube-playlist";
+import { mergeVideos, readTextLimited, videoFromNextResponse, videoFromOEmbed, videoFromPlayerResponse, videoFromSearchPage, videoIdFrom } from "@/lib/youtube-playlist";
 
 export const runtime = "edge";
 
@@ -11,18 +11,25 @@ const init = (extra: RequestInit = {}) => ({ ...extra, headers: { ...HEADERS, ..
 
 type Attempt = { source: string; status: number; playability?: string; video: Video | null };
 
-const player = (id: string, clientName: string, clientVersion: string) => async (): Promise<Attempt> => {
-  const response = await fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", init({
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ videoId: id, context: { client: { clientName, clientVersion, hl: "en" } } }),
-  }));
+const innertube = (endpoint: "player" | "next", id: string) => fetch(`https://www.youtube.com/youtubei/v1/${endpoint}?prettyPrint=false`, init({
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ videoId: id, context: { client: { clientName: "WEB", clientVersion: "2.20240101.00.00", hl: "en" } } }),
+}));
+
+const player = (id: string) => async (): Promise<Attempt> => {
+  const response = await innertube("player", id);
   const body = response.ok ? await response.json() as { playabilityStatus?: { status?: string } } : null;
-  return { source: `innertube:${clientName}`, status: response.status, playability: body?.playabilityStatus?.status, video: body ? videoFromPlayerResponse(body, id) : null };
+  return { source: "player", status: response.status, playability: body?.playabilityStatus?.status, video: body ? videoFromPlayerResponse(body, id) : null };
 };
 
-const watchPage = (id: string) => async (): Promise<Attempt> => {
-  const response = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(id)}&hl=en`, init({ cf: { cacheTtl: 86_400 } } as RequestInit));
-  return { source: "watch-page", status: response.status, video: response.ok ? parseWatchPage(await readTextLimited(response, 3_000_000), id) : null };
+const next = (id: string) => async (): Promise<Attempt> => {
+  const response = await innertube("next", id);
+  return { source: "next", status: response.status, video: response.ok ? videoFromNextResponse(await response.json(), id) : null };
+};
+
+const search = (id: string) => async (): Promise<Attempt> => {
+  const response = await fetch(`https://www.youtube.com/results?search_query=${id}&hl=en`, init({ cf: { cacheTtl: 86_400 } } as RequestInit));
+  return { source: "search", status: response.status, video: response.ok ? videoFromSearchPage(await readTextLimited(response, 3_000_000), id) : null };
 };
 
 const oEmbed = (id: string) => async (): Promise<Attempt> => {
@@ -30,24 +37,27 @@ const oEmbed = (id: string) => async (): Promise<Attempt> => {
   return { source: "oembed", status: response.status, video: response.ok ? videoFromOEmbed(await response.json(), id) : null };
 };
 
-/**
- * Sources, richest first. The innertube player endpoint returns the full metadata as ~10 KB of JSON,
- * even when playback is reported as unplayable. The watch page carries the same JSON inside 1.4 MB of HTML.
- * oEmbed always answers but only knows title, author, and thumbnail. YouTube gates some of these for
- * datacenter addresses, so the order is a best guess and `?debug=1` shows what each source returned.
- */
-const sources = (id: string) => [player(id, "WEB", "2.20240101.00.00"), player(id, "MWEB", "2.20240101.00.00"), watchPage(id), oEmbed(id)];
+const attempt = (run: () => Promise<Attempt>) => run().then((result) => result.video).catch(() => null);
 
+/**
+ * Richest source first. The `player` endpoint has everything (length, category, keywords) but YouTube
+ * turns it away for datacenter addresses with LOGIN_REQUIRED. `next` (description, views, date, chapters)
+ * and a search for the id (length, snippet) are served to Workers and are merged. oEmbed always answers
+ * with title, author, and thumbnail. `?debug=1` shows what each source returned from where the Worker runs.
+ */
 async function fetchVideo(id: string): Promise<Video | null> {
-  for (const attempt of sources(id)) {
-    const result = await attempt().catch(() => null);
-    if (result?.video) return result.video;
-  }
-  return null;
+  const fromPlayer = await attempt(player(id));
+  if (fromPlayer) return fromPlayer;
+  const [fromNext, fromSearch] = await Promise.all([attempt(next(id)), attempt(search(id))]);
+  const merged = mergeVideos(id, fromNext, fromSearch);
+  if (merged) return merged;
+  return attempt(oEmbed(id));
 }
 
 async function debugVideo(id: string) {
-  return Promise.all(sources(id).map((attempt) => attempt().then(({ video, ...rest }) => ({ ...rest, ok: !!video, fields: video ? Object.keys(video).filter((key) => video[key as keyof Video] !== undefined) : [] })).catch((error: unknown) => ({ source: "error", status: 0, ok: false, error: String(error) }))));
+  return Promise.all([player(id), next(id), search(id), oEmbed(id)].map((run) => run()
+    .then(({ video, ...rest }) => ({ ...rest, ok: !!video, fields: video ? Object.keys(video).filter((key) => video[key as keyof Video] !== undefined && video[key as keyof Video] !== "") : [] }))
+    .catch((error: unknown) => ({ source: "error", status: 0, ok: false, error: String(error) }))));
 }
 
 /**
