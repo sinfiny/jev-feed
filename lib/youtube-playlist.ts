@@ -29,6 +29,15 @@ export function playlistIdFrom(value: string) {
   } catch { return ""; }
 }
 
+export function isVideoOnlyYouTubeUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (!["youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"].includes(host) || url.searchParams.has("list")) return false;
+    return host === "youtu.be" || url.pathname === "/watch" || url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/live/");
+  } catch { return false; }
+}
+
 export async function readTextLimited(response: Response, maxBytes = 3_000_000) {
   if (!response.body) return "";
   const declared = Number(response.headers.get("content-length") ?? 0);

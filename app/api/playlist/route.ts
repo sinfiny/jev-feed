@@ -1,13 +1,16 @@
-import { parsePlaylistFeed, parsePlaylistPage, playlistIdFrom, readTextLimited } from "@/lib/youtube-playlist";
+import { isVideoOnlyYouTubeUrl, parsePlaylistFeed, parsePlaylistPage, playlistIdFrom, readTextLimited } from "@/lib/youtube-playlist";
 
 export const runtime = "edge";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const playlistId = playlistIdFrom(url.searchParams.get("url") ?? "");
+  const input = url.searchParams.get("url") ?? "";
+  const playlistId = playlistIdFrom(input);
   const requestedLimit = Number(url.searchParams.get("limit") ?? 10);
   const limit = requestedLimit === 50 || requestedLimit === 100 ? requestedLimit : 10;
-  if (!playlistId) return Response.json({ error: "Paste a valid YouTube playlist link." }, { status: 400 });
+  if (!playlistId) return Response.json({ error: isVideoOnlyYouTubeUrl(input)
+    ? "That video link lost its playlist. Open it from the playlist and copy a URL that includes list=."
+    : "Paste a public YouTube playlist link. The URL should include list=." }, { status: 400 });
 
   try {
     const [feedResponse, pageResponse] = await Promise.allSettled([

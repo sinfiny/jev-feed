@@ -15,6 +15,8 @@ export type VideoMetrics = {
   depth: number;
   clarity: number;
   focus: number;
+  buildValue: number;
+  curiosity: number;
 };
 
 export type RankedVideo = Video & VideoMetrics & {
@@ -31,15 +33,16 @@ export const LEARNING_STATE_KEY = "keen-learning-state-v2";
 export const DEFAULT_MASTERY = 64;
 
 export const templateDefinitions: Record<FeedTemplate, { name: string; shortName: string; description: string }> = {
-  stretch: { name: "Learning edge", shortName: "Stretch", description: "Prioritizes the hardest video you can probably understand next." },
-  balanced: { name: "Strong foundations", shortName: "Balanced", description: "Balances clarity, depth, relevance, and a steady rise in difficulty." },
-  kids: { name: "Brain-rot rescue", shortName: "For kids", description: "Rewards substance and clarity while pushing clickbait and distraction down." },
+  stretch: { name: "Deep Dive", shortName: "Deep", description: "Internals, first principles, proofs. The good 2 a.m. rabbit hole." },
+  balanced: { name: "Ship Mode", shortName: "Build", description: "Code, demos, implementation. Leave with something working." },
+  kids: { name: "No Slop", shortName: "Signal", description: "Maximum signal. Hype, reactions, and empty calories sink." },
 };
 
 const hardTerms = /advanced|proof|theorem|derive|derivation|architecture|internals|from scratch|deep dive|graduate|optimization|algorithm|geometry|paradox|formal/i;
 const gentleTerms = /intro|introduction|beginner|basics|overview|explained|intuition|visual|essence|first|simple/i;
 const practicalTerms = /tutorial|build|exercise|practice|project|example|how to|implementation|experiment/i;
 const depthTerms = /why|how|history|science|mathematics|engineering|lesson|lecture|documentary|analysis|explained|course|chapter/i;
+const curiosityTerms = /inside|internals|under the hood|from scratch|first principles|why|paradox|deep dive|architecture|history|design|trade-?offs?|behind/i;
 const distractionTerms = /shocking|insane|crazy|unbelievable|must watch|viral|secret|hack|prank|reaction|challenge|vs\.?|shorts?|satisfying|compilation/i;
 
 const clamp = (value: number, min = 1, max = 99) => Math.max(min, Math.min(max, Math.round(value)));
@@ -55,6 +58,7 @@ export function rankVideos(videos: Video[], mastery: number, completed: string[]
       const hasGentle = gentleTerms.test(text);
       const hasPractical = practicalTerms.test(text);
       const hasDepth = depthTerms.test(text);
+      const hasCuriosity = curiosityTerms.test(text);
       const hasDistraction = distractionTerms.test(text);
       const titleWords = video.title.trim().split(/\s+/).length;
       const shoutiness = (video.title.match(/[!?]/g)?.length ?? 0) * 4 + (video.title === video.title.toUpperCase() ? 14 : 0);
@@ -65,38 +69,41 @@ export function rankVideos(videos: Video[], mastery: number, completed: string[]
       const depth = clamp(50 + (hasDepth ? 22 : 0) + (hasHard ? 10 : 0) + (video.description.length > 180 ? 8 : 0) - (hasDistraction ? 18 : 0), 18, 98);
       const clarity = clamp(68 + (hasGentle ? 18 : 0) + (hasPractical ? 8 : 0) - (titleWords > 15 ? 8 : 0) - shoutiness / 2, 22, 98);
       const focus = clamp(88 - (hasDistraction ? 38 : 0) - shoutiness + (hasDepth ? 6 : 0), 12, 99);
+      const buildValue = clamp(42 + (hasPractical ? 38 : 0) + (hasGentle ? 8 : 0) + (video.description.length > 120 ? 6 : 0) - (hasDistraction ? 14 : 0), 14, 98);
+      const curiosity = clamp(45 + (hasCuriosity ? 32 : 0) + (hasHard ? 12 : 0) + (hasDepth ? 8 : 0) - (hasDistraction ? 12 : 0), 18, 99);
 
-      const relevance = 86 + (hasPractical ? 8 : 0);
       const tooHardPenalty = difficulty > mastery + 20 ? 22 : 0;
       const score = template === "kids"
-        ? clamp(depth * 0.31 + clarity * 0.27 + focus * 0.34 + learnability * 0.08)
+        ? clamp(focus * 0.48 + depth * 0.26 + clarity * 0.16 + buildValue * 0.1)
         : template === "balanced"
-          ? clamp(depth * 0.28 + clarity * 0.24 + learnability * 0.3 + relevance * 0.18 - tooHardPenalty * 0.45)
-          : clamp(difficulty * 0.34 + learnability * 0.42 + depth * 0.12 + relevance * 0.12 - tooHardPenalty);
+          ? clamp(buildValue * 0.46 + clarity * 0.22 + learnability * 0.18 + focus * 0.14 - tooHardPenalty * 0.35)
+          : clamp(depth * 0.34 + curiosity * 0.34 + difficulty * 0.2 + focus * 0.12 - tooHardPenalty * 0.3);
 
       const classification = template === "kids"
-        ? focus >= 78 && depth >= 65 ? "Substance-first" : focus < 55 ? "High distraction risk" : "Kid-friendly watch"
-        : difficulty > mastery + 20 ? "Save for later" : difficulty >= mastery - 4 ? "At your learning edge" : hasPractical ? "Practice and apply" : "Build the foundation";
+        ? focus >= 78 && depth >= 65 ? "High signal" : focus < 55 ? "Possible slop" : "Worth a look"
+        : template === "balanced"
+          ? buildValue >= 76 ? "Build this" : hasPractical ? "Code along" : "Useful context"
+          : difficulty > mastery + 20 ? "Big-brain detour" : curiosity >= 76 ? "Rabbit-hole worthy" : "Core concept";
 
       const signals = [
-        hasGentle ? "Clear entry point" : hasHard ? "Concept dense" : "Moderate ramp",
-        hasPractical ? "Practical examples" : hasDepth ? "Explains the why" : "Topic building",
-        focus >= 78 ? "Low distraction" : focus < 55 ? "Clickbait signals" : "Mixed pacing",
+        hasGentle ? "Easy entry" : hasHard ? "Concept dense" : "Some prerequisites",
+        hasPractical ? "Hands-on" : hasCuriosity ? "Opens new tabs" : "Builds context",
+        focus >= 78 ? "High signal" : focus < 55 ? "Hype detected" : "Mixed signal",
       ];
 
       const reason = template === "kids"
-        ? `${classification} · ${depth >= 70 ? "meaningful depth" : "accessible substance"} with ${focus >= 78 ? "few distraction signals" : "some attention-grabbing signals"}`
+        ? `${classification} · ${focus >= 78 ? "substance beats packaging" : "some attention bait remains"}`
         : template === "balanced"
-          ? `${classification} · balances ${clarity >= depth ? "clarity" : "depth"} with your current level`
+          ? `${classification} · ${hasPractical ? "concrete implementation and examples" : "useful before you start building"}`
           : difficulty > mastery + 20
-            ? "Save for later · beyond your current edge"
-            : difficulty >= mastery - 4
-              ? "High concept density · right edge of your level"
-              : hasPractical
-                ? "Practice-heavy · reinforces current knowledge"
-                : "Builds the foundation for harder videos";
+            ? "Big-brain detour · dense, but worth saving"
+            : hasCuriosity
+              ? "Rabbit-hole worthy · follows the idea beneath the idea"
+              : hasHard
+                ? "Concept dense · rewards a slower watch"
+                : "Core concept · unlocks the deeper videos";
 
-      return { ...video, difficulty, learnability, depth, clarity, focus, score, classification, signals, reason };
+      return { ...video, difficulty, learnability, depth, clarity, focus, buildValue, curiosity, score, classification, signals, reason };
     })
     .sort((a, b) => b.score - a.score || b.depth - a.depth);
 }
