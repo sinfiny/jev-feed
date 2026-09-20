@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Keen — Your intentional YouTube feed",
-  description: "Turn any YouTube playlist into an adaptive, distraction-free learning queue.",
+  title: "Jev — Publish a smarter video feed",
+  description: "Analyze any public YouTube playlist and publish a ranked, distraction-aware learning feed.",
 };
 
 export default function RootLayout({

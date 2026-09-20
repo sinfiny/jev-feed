@@ -5,11 +5,14 @@ Jev turns a public YouTube playlist into an adaptive, distraction-free learning 
 ## Current capabilities
 
 - Import a public YouTube playlist from its URL.
+- Analyze 10, 50, or 100 videos when the playlist contains them.
 - Validate playlist URLs and fetch the public YouTube feed server-side.
-- Rank videos by estimated difficulty, learnability, and relevance.
+- Rank videos through learning-edge, balanced-foundation, or child-focused perspectives.
+- Show research depth, clarity, learnability, focus quality, and recommendation reasons.
 - Play videos in a focused embedded player.
 - Adjust future recommendations from “too hard,” “just right,” and “too easy” feedback.
 - Preserve progress for each playlist in the viewer's browser.
+- Publish a separate anonymous feed URL under `/feed` with its playlist, template, and size encoded in the link.
 
 The next planned product slice is public feed publishing: an organizer chooses a playlist and ranking template, publishes it to a Cloudflare-managed subdomain, and shares an anonymous, instantly accessible feed with an audience.
 
@@ -48,4 +51,4 @@ The current Cloudflare deployment is available at [jev-feed.viod606.workers.dev]
 npm run deploy
 ```
 
-Public custom-domain and per-feed subdomain publishing are not implemented yet.
+Wildcard per-feed custom subdomains are not implemented yet; the MVP uses shareable `/feed` links on the deployed Worker.

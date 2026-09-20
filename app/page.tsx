@@ -2,38 +2,17 @@
 
 import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, BookOpen, Brain, Check, ChevronDown, Clock3, Flame, Link2, LoaderCircle, Play, RotateCcw, Sparkles, X } from "lucide-react";
+import { ArrowRight, Brain, Check, ChevronDown, Copy, ExternalLink, Flame, Link2, LoaderCircle, Play, Rocket, ShieldCheck, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import {
-  DEFAULT_MASTERY,
-  LEARNING_STATE_KEY,
-  progressForPlaylist,
-  rankVideos,
-  readLearningState,
-  type RankedVideo,
-  type Video,
-} from "@/lib/learning";
+import { DEFAULT_MASTERY, LEARNING_STATE_KEY, progressForPlaylist, rankVideos, readLearningState, templateDefinitions, type FeedTemplate, type RankedVideo, type Video } from "@/lib/learning";
 
 type Playlist = { id: string; title: string; channel: string };
-type ImportResult = { playlist: Playlist; videos: Video[]; error?: string };
+type ImportResult = { playlist: Playlist; videos: Video[]; error?: string; returnedCount?: number };
 type Feedback = "easy" | "right" | "hard";
 
-declare global {
-  interface Document {
-    modelContext?: {
-      registerTool: (tool: {
-        name: string;
-        title: string;
-        description: string;
-        inputSchema: object;
-        annotations: { readOnlyHint: boolean; untrustedContentHint: boolean };
-        execute: (input: unknown) => Promise<unknown>;
-      }, options?: { signal?: AbortSignal }) => void | Promise<void>;
-    };
-  }
-}
+declare global { interface Document { modelContext?: { registerTool: (tool: { name: string; title: string; description: string; inputSchema: object; annotations: { readOnlyHint: boolean; untrustedContentHint: boolean }; execute: (input: unknown) => Promise<unknown> }, options?: { signal?: AbortSignal }) => void | Promise<void> } } }
 
 const samplePlaylist: Playlist = { id: "PLZHQObOWTQDMsr9K-rj53DwVRMYO3t5Yr", title: "Essence of calculus", channel: "3Blue1Brown" };
 const sampleVideos: Video[] = [
@@ -41,6 +20,10 @@ const sampleVideos: Video[] = [
   { id: "9vKqVkMQHKk", title: "The paradox of the derivative", channel: "3Blue1Brown", description: "What derivatives really measure, and why instantaneous rate of change makes sense.", thumbnail: "https://i.ytimg.com/vi/9vKqVkMQHKk/hqdefault.jpg" },
   { id: "kfF40MiS7zA", title: "Derivative formulas through geometry", channel: "3Blue1Brown", description: "Deriving familiar rules visually through geometry and first principles.", thumbnail: "https://i.ytimg.com/vi/kfF40MiS7zA/hqdefault.jpg" },
 ];
+
+function Metric({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
+  return <div><div className="mb-1 flex justify-between text-[11px] font-semibold uppercase tracking-wider text-white/40"><span>{label}</span><span className={accent ? "text-[var(--acid)]" : "text-white/65"}>{value}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className={`h-full rounded-full ${accent ? "bg-[var(--acid)]" : "bg-[var(--violet)]"}`} style={{ width: `${value}%` }} /></div></div>;
+}
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -53,130 +36,106 @@ export default function Home() {
   const [error, setError] = useState("");
   const [showLogic, setShowLogic] = useState(false);
   const [hasLoadedProgress, setHasLoadedProgress] = useState(false);
+  const [template, setTemplate] = useState<FeedTemplate>("stretch");
+  const [videoLimit, setVideoLimit] = useState<10 | 50 | 100>(10);
+  const [publishedUrl, setPublishedUrl] = useState("");
 
   useEffect(() => {
     const saved = progressForPlaylist(readLearningState(), samplePlaylist.id, sampleVideos.map((video) => video.id));
-    queueMicrotask(() => {
-      setMastery(saved.mastery);
-      setCompleted(saved.completed);
-      setHasLoadedProgress(true);
-    });
+    queueMicrotask(() => { setMastery(saved.mastery); setCompleted(saved.completed); setHasLoadedProgress(true); });
   }, []);
 
   useEffect(() => {
     if (!hasLoadedProgress) return;
     const state = readLearningState();
-    localStorage.setItem(LEARNING_STATE_KEY, JSON.stringify({
-      ...state,
-      [playlist.id]: { mastery, completed },
-    }));
+    localStorage.setItem(LEARNING_STATE_KEY, JSON.stringify({ ...state, [playlist.id]: { mastery, completed } }));
   }, [mastery, completed, hasLoadedProgress, playlist.id]);
 
-  const ranked = useMemo(() => rankVideos(videos, mastery, completed), [videos, mastery, completed]);
+  const ranked = useMemo(() => rankVideos(videos, mastery, completed, template), [videos, mastery, completed, template]);
+  const top = ranked[0];
 
-  const importPlaylist = useCallback(async (playlistUrl: string) => {
-    setLoading(true);
-    setError("");
+  const importPlaylist = useCallback(async (playlistUrl: string, requestedLimit: 10 | 50 | 100 = videoLimit) => {
+    setLoading(true); setError(""); setPublishedUrl("");
     try {
-      const response = await fetch(`/api/playlist?url=${encodeURIComponent(playlistUrl)}`);
+      const response = await fetch(`/api/playlist?url=${encodeURIComponent(playlistUrl)}&limit=${requestedLimit}`);
       const result = await response.json().catch(() => ({ error: "The server returned an unexpected response." })) as ImportResult;
       if (!response.ok) throw new Error(result.error || "Could not import that playlist.");
-      if (!result.playlist?.id || !Array.isArray(result.videos) || !result.videos.length) throw new Error("That playlist did not contain any public videos.");
+      if (!result.playlist?.id || !result.videos?.length) throw new Error("That playlist did not contain any public videos.");
       const saved = progressForPlaylist(readLearningState(), result.playlist.id, result.videos.map((video) => video.id));
-      setPlaylist(result.playlist);
-      setVideos(result.videos);
-      setMastery(saved.mastery);
-      setCompleted(saved.completed);
-      setSelected(null);
-      setUrl(playlistUrl);
+      setPlaylist(result.playlist); setVideos(result.videos); setMastery(saved.mastery); setCompleted(saved.completed); setSelected(null); setUrl(playlistUrl); setVideoLimit(requestedLimit);
       return { title: result.playlist.title, videoCount: result.videos.length };
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Could not import that playlist.";
-      setError(message);
-      throw new Error(message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      setError(message); throw new Error(message);
+    } finally { setLoading(false); }
+  }, [videoLimit]);
 
   useEffect(() => {
     if (!document.modelContext?.registerTool) return;
     const lifecycle = new AbortController();
     void Promise.resolve(document.modelContext.registerTool({
-      name: "import_youtube_playlist",
-      title: "Import YouTube playlist",
-      description: "Import a public YouTube playlist into the visible Keen learning queue and rank its videos.",
-      inputSchema: { type: "object", properties: { url: { type: "string", description: "A public YouTube playlist URL." } }, required: ["url"], additionalProperties: false },
+      name: "build_jev_feed", title: "Build a Jev feed", description: "Import and analyze a public YouTube playlist in the visible Jev builder.",
+      inputSchema: { type: "object", properties: { url: { type: "string" }, limit: { type: "number", enum: [10, 50, 100] } }, required: ["url"], additionalProperties: false },
       annotations: { readOnlyHint: false, untrustedContentHint: true },
-      execute: async (input) => {
-        if (!input || typeof input !== "object" || typeof (input as { url?: unknown }).url !== "string") throw new Error("A playlist URL is required.");
-        return importPlaylist((input as { url: string }).url);
-      },
+      execute: async (input) => { const value = input as { url?: unknown; limit?: unknown }; if (typeof value.url !== "string") throw new Error("A playlist URL is required."); return importPlaylist(value.url, value.limit === 50 || value.limit === 100 ? value.limit : 10); },
     }, { signal: lifecycle.signal })).catch(() => undefined);
     return () => lifecycle.abort();
   }, [importPlaylist]);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!url.trim()) { setError("Paste a YouTube playlist link first."); return; }
-    try { await importPlaylist(url); } catch { /* The visible error is set by importPlaylist. */ }
+  async function submit(event: FormEvent) { event.preventDefault(); if (!url.trim()) { setError("Paste a YouTube playlist link first."); return; } try { await importPlaylist(url); } catch { /* visible error is already set */ } }
+  function respond(video: RankedVideo, feedback: Feedback) { const delta = feedback === "easy" ? 8 : feedback === "right" ? 4 : -7; setMastery((value) => Math.max(30, Math.min(92, value + delta))); setCompleted((items) => items.includes(video.id) ? items : [...items, video.id]); setSelected(null); }
+  async function publish() {
+    const share = `${window.location.origin}/feed?playlist=${encodeURIComponent(playlist.id)}&template=${template}&limit=${videoLimit}`;
+    setPublishedUrl(share);
+    try { await navigator.clipboard.writeText(share); } catch { /* Link remains visible for manual copying. */ }
   }
 
-  function respond(video: RankedVideo, feedback: Feedback) {
-    const delta = feedback === "easy" ? 8 : feedback === "right" ? 4 : -7;
-    setMastery((value) => Math.max(30, Math.min(92, value + delta)));
-    setCompleted((items) => items.includes(video.id) ? items : [...items, video.id]);
-    setSelected(null);
-  }
-
-  const top = ranked[0];
   const completedCount = videos.filter((video) => completed.includes(video.id)).length;
   const progress = videos.length ? Math.round((completedCount / videos.length) * 100) : 0;
 
-  return (
-    <main className="min-h-screen bg-[var(--ink)] text-[var(--paper)]">
-      <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
-        <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-full bg-[var(--acid)] text-[var(--ink)]"><Brain className="size-5" strokeWidth={2.4} /></div><div><p className="font-display text-xl leading-none tracking-tight">Keen</p><p className="mt-1 text-xs text-white/45">Your intentional YouTube feed</p></div></div>
-        <div className="flex items-center gap-3"><div className="hidden items-center gap-2 text-sm text-white/55 sm:flex"><Flame className="size-4 text-orange-400" /> Learning edge {mastery}</div><button className="grid size-10 place-items-center rounded-full border border-white/10 bg-white/[0.06] text-sm font-semibold" aria-label="Profile">SB</button></div>
-      </header>
+  return <main className="min-h-screen bg-[var(--ink)] text-[var(--paper)]">
+    <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
+      <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-full bg-[var(--acid)] text-[var(--ink)]"><Brain className="size-5" /></div><div><p className="font-display text-xl leading-none">Jev</p><p className="mt-1 text-xs text-white/45">Build an intentional video feed</p></div></div>
+      <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/55"><Flame className="size-4 text-orange-400" /> Learning edge {mastery}</div>
+    </header>
 
-      <section className="mx-auto grid max-w-7xl gap-10 px-5 pb-28 pt-8 sm:px-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,.75fr)] lg:px-12 lg:pt-12">
-        <div>
-          <div className="mb-9 max-w-2xl"><div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[.18em] text-[var(--acid)]"><Sparkles className="size-4" /> Today’s learning edge</div><h1 className="font-display text-[clamp(3.1rem,7vw,6.7rem)] leading-[.88] tracking-[-.055em]">Watch less.<br /><span className="text-white/35">Learn deeper.</span></h1><p className="mt-6 max-w-xl text-base leading-7 text-white/55 sm:text-lg">Paste a YouTube playlist. Keen keeps you at the edge of what you can understand—not the edge of your attention.</p></div>
+    <section className="mx-auto max-w-7xl px-5 pb-24 pt-5 sm:px-8 lg:px-12">
+      <div className="grid gap-8 lg:grid-cols-[1.1fr_.9fr] lg:items-end">
+        <div><div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-[var(--acid)]"><Sparkles className="size-4" /> Feed builder</div><h1 className="font-display text-[clamp(3rem,6vw,6rem)] leading-[.9] tracking-[-.055em]">Turn a playlist into<br /><span className="text-white/35">a point of view.</span></h1></div>
+        <p className="max-w-xl text-base leading-7 text-white/55 sm:text-lg">Jev reads difficulty, clarity, depth, focus, and learnability—then publishes a clean feed anyone can open without logging in.</p>
+      </div>
 
-          <form onSubmit={submit} className="mb-3 flex max-w-2xl flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 sm:flex-row">
-            <div className="relative min-w-0 flex-1"><Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-white/35" /><Input value={url} onChange={(event) => setUrl(event.target.value)} aria-label="YouTube playlist link" placeholder="Paste a YouTube playlist link" className="h-12 border-0 bg-transparent pl-10 text-base text-white shadow-none placeholder:text-white/30 focus-visible:ring-0" /></div>
-            <Button disabled={loading} type="submit" className="h-12 rounded-xl bg-[var(--acid)] px-5 text-[var(--ink)] hover:bg-[var(--acid-bright)]">{loading ? <LoaderCircle className="animate-spin" /> : <>Build my feed <ArrowRight /></>}</Button>
-          </form>
-          <div aria-live="polite" className="mb-10 min-h-6 max-w-2xl px-1 text-sm">{error ? <p className="text-red-300">{error}</p> : <p className="text-white/35">Public playlists work without a Google login. Progress stays on this device.</p>}</div>
+      <div className="mt-8 grid gap-4 lg:grid-cols-[1.25fr_.75fr]">
+        <form onSubmit={submit} className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 sm:flex-row">
+          <div className="relative min-w-0 flex-1"><Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-white/35" /><Input value={url} onChange={(event) => setUrl(event.target.value)} aria-label="YouTube playlist link" placeholder="Paste a public YouTube playlist" className="h-12 border-0 bg-transparent pl-10 text-base text-white shadow-none placeholder:text-white/30 focus-visible:ring-0" /></div>
+          <Button disabled={loading} type="submit" className="h-12 rounded-xl bg-[var(--acid)] px-5 text-[var(--ink)] hover:bg-[var(--acid-bright)]">{loading ? <LoaderCircle className="animate-spin" /> : <>Analyze playlist <ArrowRight /></>}</Button>
+        </form>
+        <Button onClick={publish} className="h-full min-h-14 rounded-2xl bg-[var(--violet)] text-white hover:bg-violet-500"><Rocket /> Publish public feed</Button>
+      </div>
+      <div aria-live="polite" className="min-h-7 px-1 pt-2 text-sm">{error ? <p className="text-red-300">{error}</p> : publishedUrl ? <p className="flex flex-wrap items-center gap-2 text-[var(--acid)]"><Check className="size-4" /> Published link copied <a className="underline" href={publishedUrl} target="_blank" rel="noreferrer">Open feed <ExternalLink className="inline size-3" /></a><button onClick={() => navigator.clipboard.writeText(publishedUrl)} aria-label="Copy published link"><Copy className="size-4" /></button></p> : <p className="text-white/35">Builder and published feed are separate: this page configures; the shared link only shows the finished feed.</p>}</div>
 
-          {selected && (
-            <section className="mb-8 overflow-hidden rounded-[1.5rem] border border-[var(--acid)]/35 bg-black">
-              <div className="aspect-video"><iframe className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${selected.id}?autoplay=1&rel=0`} title={selected.title} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /></div>
-              <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div><p className="text-xs uppercase tracking-[.14em] text-[var(--acid)]">Focus mode</p><h2 className="mt-1 font-display text-xl">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => respond(selected, "hard")} className="border-white/15 bg-white/5 text-white">Too hard</Button><Button variant="outline" onClick={() => respond(selected, "right")} className="border-white/15 bg-white/5 text-white">Just right</Button><Button onClick={() => respond(selected, "easy")} className="bg-[var(--acid)] text-[var(--ink)]">Too easy</Button><Button size="icon" variant="ghost" onClick={() => setSelected(null)} aria-label="Close player"><X /></Button></div></div>
-            </section>
-          )}
+      <section className="mt-5 rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-4 sm:p-5">
+        <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div><p className="text-xs font-bold uppercase tracking-[.16em] text-white/35">Ranking perspective</p><div className="mt-3 grid gap-2 sm:grid-cols-3">{(Object.keys(templateDefinitions) as FeedTemplate[]).map((key) => <button key={key} onClick={() => setTemplate(key)} className={`rounded-xl border p-3 text-left transition ${template === key ? "border-[var(--acid)] bg-[var(--acid)]/10" : "border-white/10 bg-black/10 hover:border-white/25"}`}><span className="font-display text-lg">{templateDefinitions[key].name}</span><span className="mt-1 block text-xs leading-5 text-white/45">{templateDefinitions[key].description}</span></button>)}</div></div>
+          <div><p className="text-xs font-bold uppercase tracking-[.16em] text-white/35">Feed size</p><div className="mt-3 flex gap-2">{([10, 50, 100] as const).map((count) => <button key={count} onClick={() => { setVideoLimit(count); if (url) void importPlaylist(url, count).catch(() => undefined); }} className={`h-12 min-w-16 rounded-xl border px-4 font-display text-lg ${videoLimit === count ? "border-[var(--acid)] bg-[var(--acid)] text-[var(--ink)]" : "border-white/10 bg-white/5"}`}>{count}</button>)}</div></div>
+        </div>
+      </section>
 
-          <div className="mb-5 flex items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-white/35">{playlist.title}</p><h2 className="mt-2 font-display text-3xl tracking-tight">Optimized for effort</h2></div><p className="hidden text-sm text-white/40 sm:block">{ranked.length} of {videos.length} remaining</p></div>
+      {selected && <section className="mt-8 overflow-hidden rounded-[1.5rem] border border-[var(--acid)]/35 bg-black"><div className="aspect-video"><iframe className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${selected.id}?autoplay=1&rel=0`} title={selected.title} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /></div><div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs uppercase tracking-[.14em] text-[var(--acid)]">Focus mode</p><h2 className="mt-1 font-display text-xl">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => respond(selected, "hard")} className="border-white/15 bg-white/5 text-white">Too hard</Button><Button variant="outline" onClick={() => respond(selected, "right")} className="border-white/15 bg-white/5 text-white">Just right</Button><Button onClick={() => respond(selected, "easy")} className="bg-[var(--acid)] text-[var(--ink)]">Too easy</Button><Button size="icon" variant="ghost" onClick={() => setSelected(null)} aria-label="Close player"><X /></Button></div></div></section>}
 
-          <div className="space-y-3">
-            {ranked.map((video, index) => (
-              <article key={video.id} className={`group grid gap-4 rounded-2xl border p-3 transition sm:grid-cols-[170px_1fr_auto] sm:items-center ${index === 0 ? "border-[var(--acid)]/45 bg-[var(--acid)]/[0.07]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}>
-                <div className="relative aspect-video overflow-hidden rounded-xl bg-white/10"><Image src={video.thumbnail || `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`} alt="" fill sizes="(min-width: 640px) 170px, 100vw" unoptimized className="object-cover opacity-85 transition group-hover:scale-[1.03]" /><div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" /><span className="absolute bottom-2.5 left-3 font-display text-2xl text-white/90">{String(index + 1).padStart(2, "0")}</span>{index === 0 && <span className="absolute right-2.5 top-2.5 rounded-full bg-[var(--acid)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ink)]">Best next</span>}</div>
-                <div className="min-w-0 py-1"><div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/40"><span>{video.channel}</span><span>Difficulty {video.difficulty}</span><span>Learnability {video.learnability}</span></div><h3 className="font-display text-xl leading-tight tracking-tight sm:text-2xl">{video.title}</h3><p className="mt-2 text-sm text-white/45">{video.reason}</p></div>
-                <div className="flex items-center justify-between gap-4 sm:flex-col sm:justify-center sm:px-3"><div className="text-left sm:text-center"><p className="font-display text-2xl text-[var(--acid)]">{video.score}</p><p className="text-[10px] uppercase tracking-wider text-white/35">Fit score</p></div><button onClick={() => setSelected(video)} className="grid size-11 place-items-center rounded-full bg-white text-[var(--ink)] transition group-hover:scale-105" aria-label={`Play ${video.title}`}><Play className="ml-0.5 size-4 fill-current" /></button></div>
-              </article>
-            ))}
-            {!ranked.length && <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center"><Check className="mx-auto size-8 text-[var(--acid)]" /><h3 className="mt-3 font-display text-2xl">Playlist complete</h3><p className="mt-2 text-sm text-white/45">You finished every video in this learning queue.</p><Button onClick={() => setCompleted([])} variant="outline" className="mt-5 border-white/15 bg-white/5 text-white"><RotateCcw /> Study it again</Button></div>}
-          </div>
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
+        <div><div className="mb-5 flex items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-white/35">{playlist.title} · {videos.length} analyzed</p><h2 className="mt-2 font-display text-3xl">The ranked feed</h2></div><p className="hidden text-sm text-white/40 sm:block">{ranked.length} remaining</p></div>
+          <div className="space-y-3">{ranked.map((video, index) => <article key={video.id} className={`group grid gap-4 rounded-2xl border p-3 transition sm:grid-cols-[170px_1fr_auto] sm:items-center ${index === 0 ? "border-[var(--acid)]/45 bg-[var(--acid)]/[0.07]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}>
+            <div className="relative aspect-video overflow-hidden rounded-xl bg-white/10"><Image src={video.thumbnail || `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`} alt="" fill sizes="170px" unoptimized className="object-cover opacity-85 transition group-hover:scale-[1.03]" /><div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" /><span className="absolute bottom-2 left-3 font-display text-2xl">{String(index + 1).padStart(2, "0")}</span>{index === 0 && <span className="absolute right-2 top-2 rounded-full bg-[var(--acid)] px-2 py-1 text-[10px] font-bold uppercase text-[var(--ink)]">Best next</span>}</div>
+            <div className="min-w-0"><div className="mb-1 flex flex-wrap gap-2 text-xs text-white/40"><span>{video.channel}</span><span>·</span><span className="text-violet-300">{video.classification}</span></div><h3 className="font-display text-xl leading-tight sm:text-2xl">{video.title}</h3><p className="mt-2 text-sm text-white/45">{video.reason}</p><div className="mt-3 flex flex-wrap gap-1.5">{video.signals.map((signal) => <span key={signal} className="rounded-full border border-white/10 px-2 py-1 text-[11px] text-white/45">{signal}</span>)}</div></div>
+            <div className="flex items-center justify-between gap-4 sm:flex-col"><div className="text-center"><p className="font-display text-2xl text-[var(--acid)]">{video.score}</p><p className="text-[10px] uppercase tracking-wider text-white/35">Jev score</p></div><button onClick={() => setSelected(video)} className="grid size-11 place-items-center rounded-full bg-white text-[var(--ink)]" aria-label={`Play ${video.title}`}><Play className="ml-0.5 size-4 fill-current" /></button></div>
+          </article>)}</div>
         </div>
 
-        <aside className="lg:pt-28"><div className="sticky top-6 space-y-4">
-          <section className="overflow-hidden rounded-[1.75rem] bg-[var(--paper)] p-6 text-[var(--ink)] sm:p-7"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[.16em] text-black/40">Today’s session</p><span className="rounded-full bg-[var(--ink)] px-2.5 py-1 text-xs text-white">1 hard thing</span></div><p className="mt-8 font-display text-5xl leading-none tracking-[-.05em]">{top ? "Ready to stretch?" : "Nicely done."}</p><p className="mt-3 text-sm leading-6 text-black/55">{top ? `“${top.title}” is the strongest match for your current learning edge.` : "Import another playlist or reset this one when you are ready."}</p><div className="mt-8"><div className="mb-2 flex justify-between text-xs font-semibold"><span>Playlist depth</span><span>{progress}%</span></div><Progress value={progress} className="h-2.5 bg-black/10 [&_[data-slot=progress-indicator]]:bg-[var(--violet)]" /></div><Button disabled={!top} onClick={() => top && setSelected(top)} className="mt-7 h-12 w-full rounded-xl bg-[var(--ink)] text-white hover:bg-black"><Play className="fill-current" /> Start focus session</Button></section>
-          <section className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-6"><button onClick={() => setShowLogic((value) => !value)} className="flex w-full items-start gap-3 text-left"><div className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--violet)]/25 text-violet-300"><BookOpen className="size-5" /></div><div className="flex-1"><h3 className="font-display text-xl">How ranking works</h3><p className="mt-1 text-sm leading-6 text-white/45">Difficulty × learnability × relevance, adjusted after every video.</p></div><ChevronDown className={`mt-2 size-4 text-white/35 transition ${showLogic ? "rotate-180" : ""}`} /></button>{showLogic && <div className="mt-5 space-y-3 border-t border-white/10 pt-5 text-sm leading-6 text-white/50"><p><strong className="text-white/80">Difficulty</strong> is estimated from the title, description, and position in the playlist.</p><p><strong className="text-white/80">Learnability</strong> peaks near your current edge and drops when a video is far too easy or too hard.</p><p><strong className="text-white/80">Feedback</strong> moves that edge: “too easy” raises it, “too hard” lowers it.</p></div>}<div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs">{["Challenging", "Learnable", "Relevant"].map((label) => <div key={label} className="rounded-xl border border-white/10 px-2 py-3 text-white/55"><Check className="mx-auto mb-1.5 size-4 text-[var(--acid)]" />{label}</div>)}</div></section>
-          <div className="flex items-center gap-2 px-2 text-xs text-white/30"><Clock3 className="size-3.5" /> {playlist.channel} · progress saved locally</div>
+        <aside><div className="sticky top-6 space-y-4">{top && <section className="overflow-hidden rounded-[1.75rem] bg-[var(--paper)] p-6 text-[var(--ink)]"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[.16em] text-black/40">Jev intelligence</p><span className="rounded-full bg-[var(--ink)] px-3 py-1 text-xs text-white">{templateDefinitions[template].shortName} lens</span></div><p className="mt-7 font-display text-4xl leading-none">Why this one wins.</p><p className="mt-3 text-sm leading-6 text-black/55">{top.reason}. Jev found {top.signals.map((item) => item.toLowerCase()).join(", ")}.</p><div className="mt-6 grid gap-3 rounded-2xl bg-[var(--ink)] p-4 text-white"><Metric label="Research depth" value={top.depth} accent /><Metric label="Clarity" value={top.clarity} /><Metric label="Learnability" value={top.learnability} /><Metric label="Focus quality" value={top.focus} /></div><div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs"><div><p className="font-display text-xl">{top.difficulty}</p><p className="text-black/40">Effort</p></div><div><p className="font-display text-xl">{top.depth}</p><p className="text-black/40">Depth</p></div><div><p className="font-display text-xl">{top.score}</p><p className="text-black/40">Fit</p></div></div><Button onClick={() => setSelected(top)} className="mt-6 h-12 w-full rounded-xl bg-[var(--ink)] text-white"><Play className="fill-current" /> Watch the strongest pick</Button></section>}
+          <section className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-6"><button onClick={() => setShowLogic((value) => !value)} className="flex w-full items-start gap-3 text-left"><div className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--violet)]/25 text-violet-300"><ShieldCheck className="size-5" /></div><div className="flex-1"><h3 className="font-display text-xl">Three perspectives</h3><p className="mt-1 text-sm leading-6 text-white/45">Learner fit, curator quality, and parent-friendly focus.</p></div><ChevronDown className={`mt-2 size-4 text-white/35 transition ${showLogic ? "rotate-180" : ""}`} /></button>{showLogic && <div className="mt-5 space-y-3 border-t border-white/10 pt-5 text-sm leading-6 text-white/50"><p><strong className="text-white/80">Learner:</strong> Is it challenging but still understandable?</p><p><strong className="text-white/80">Curator:</strong> Does it show depth, clarity, and real explanatory effort?</p><p><strong className="text-white/80">Parent:</strong> Does substance beat clickbait and distraction?</p></div>}<div className="mt-5"><div className="mb-2 flex justify-between text-xs"><span>Playlist completed</span><span>{progress}%</span></div><Progress value={progress} className="h-2 bg-white/10 [&_[data-slot=progress-indicator]]:bg-[var(--acid)]" /></div></section>
         </div></aside>
-      </section>
-    </main>
-  );
+      </div>
+    </section>
+  </main>;
 }

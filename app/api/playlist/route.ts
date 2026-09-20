@@ -1,44 +1,40 @@
-import { parsePlaylistFeed, playlistIdFrom } from "@/lib/youtube-playlist";
+import { parsePlaylistFeed, parsePlaylistPage, playlistIdFrom, readTextLimited } from "@/lib/youtube-playlist";
 
 export const runtime = "edge";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const playlistId = playlistIdFrom(url.searchParams.get("url") ?? "");
-  if (!playlistId) {
-    return Response.json({ error: "Paste a valid YouTube playlist link." }, { status: 400 });
-  }
+  const requestedLimit = Number(url.searchParams.get("limit") ?? 10);
+  const limit = requestedLimit === 50 || requestedLimit === 100 ? requestedLimit : 10;
+  if (!playlistId) return Response.json({ error: "Paste a valid YouTube playlist link." }, { status: 400 });
 
   try {
-    const response = await fetch(
-      `https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`,
-      {
-        headers: { "User-Agent": "Keen learning feed/1.0" },
-        signal: AbortSignal.timeout(8_000),
-        cf: { cacheTtl: 900 },
-      } as RequestInit,
-    );
+    const [feedResponse, pageResponse] = await Promise.allSettled([
+      fetch(`https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`, {
+        headers: { "User-Agent": "Jev learning feed/1.0" }, signal: AbortSignal.timeout(8_000), cf: { cacheTtl: 900 },
+      } as RequestInit),
+      fetch(`https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}&hl=en`, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; JevFeed/1.0)" }, signal: AbortSignal.timeout(10_000), cf: { cacheTtl: 900 },
+      } as RequestInit),
+    ]);
 
-    if (!response.ok) {
-      return Response.json(
-        { error: response.status === 404 ? "That playlist was not found or is private." : "YouTube did not return that playlist. Try again shortly." },
-        { status: response.status === 404 ? 404 : 502 },
-      );
+    let feed = null;
+    if (feedResponse.status === "fulfilled" && feedResponse.value.ok) {
+      feed = parsePlaylistFeed(await readTextLimited(feedResponse.value, 1_500_000), playlistId);
     }
 
-    const result = parsePlaylistFeed(await response.text(), playlistId);
-    if (!result) {
-      return Response.json({ error: "No public videos were found in that playlist." }, { status: 404 });
+    let result = feed;
+    if (pageResponse.status === "fulfilled" && pageResponse.value.ok) {
+      result = parsePlaylistPage(await readTextLimited(pageResponse.value, 3_000_000), playlistId, limit, feed);
     }
 
-    return Response.json(result, {
+    if (!result?.videos.length) return Response.json({ error: "No public videos were found in that playlist." }, { status: 404 });
+    return Response.json({ ...result, requestedLimit: limit, returnedCount: result.videos.length }, {
       headers: { "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=86400" },
     });
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === "TimeoutError";
-    return Response.json(
-      { error: timedOut ? "YouTube took too long to respond. Try again." : "The playlist could not be reached. Check your connection and try again." },
-      { status: 502 },
-    );
+    return Response.json({ error: timedOut ? "YouTube took too long to respond. Try again." : "The playlist could not be reached. Try again shortly." }, { status: 502 });
   }
 }
