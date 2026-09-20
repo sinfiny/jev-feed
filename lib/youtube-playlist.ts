@@ -197,16 +197,17 @@ export function parsePlaylistPage(html: string, playlistId: string, limit: numbe
   };
 }
 
+type PlayerResponse = { videoDetails?: Record<string, unknown>; microformat?: { playerMicroformatRenderer?: Record<string, unknown> } };
+
 /**
- * Reads the public watch page for one video. The embedded player response carries the full
- * description, exact length, YouTube's category, view count, publish date, and uploader keywords.
- * Chapter titles come from the description's timestamp lines when the creator added them.
+ * Builds a Video from YouTube's player response, which carries the full description, exact length,
+ * YouTube's category, view count, publish date, and uploader keywords. The same JSON is embedded in
+ * watch pages and returned by the innertube player endpoint; metadata is present even when playback
+ * is reported as unplayable. Chapter titles come from the description's timestamp lines.
  */
-export function parseWatchPage(html: string, videoId: string): Video | null {
-  const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]*?\});(?:\s*<\/script>|\s*var\s)/);
-  if (!match) return null;
-  let response: { videoDetails?: Record<string, unknown>; microformat?: { playerMicroformatRenderer?: Record<string, unknown> } };
-  try { response = JSON.parse(match[1]); } catch { return null; }
+export function videoFromPlayerResponse(value: unknown, videoId: string): Video | null {
+  if (!value || typeof value !== "object") return null;
+  const response = value as PlayerResponse;
   const details = response.videoDetails ?? {};
   const micro = response.microformat?.playerMicroformatRenderer ?? {};
   const id = typeof details.videoId === "string" ? details.videoId : videoId;
@@ -229,5 +230,26 @@ export function parseWatchPage(html: string, videoId: string): Video | null {
     category: typeof micro.category === "string" ? micro.category : undefined,
     chapters: chapters.length >= 2 ? chapters.slice(0, 40) : undefined,
     keywords: Array.isArray(details.keywords) ? details.keywords.filter((word): word is string => typeof word === "string").slice(0, 30) : undefined,
+  };
+}
+
+/** Reads the player response embedded in a public watch page. */
+export function parseWatchPage(html: string, videoId: string): Video | null {
+  const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]*?\});(?:\s*<\/script>|\s*var\s)/);
+  if (!match) return null;
+  try { return videoFromPlayerResponse(JSON.parse(match[1]), videoId); } catch { return null; }
+}
+
+/** Last resort: YouTube's oEmbed endpoint only knows title, author, and thumbnail, but it answers from anywhere. */
+export function videoFromOEmbed(value: unknown, videoId: string): Video | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as { title?: unknown; author_name?: unknown; thumbnail_url?: unknown };
+  if (typeof item.title !== "string" || !item.title) return null;
+  return {
+    id: videoId,
+    title: item.title,
+    channel: typeof item.author_name === "string" ? item.author_name : "YouTube",
+    description: "",
+    thumbnail: typeof item.thumbnail_url === "string" ? item.thumbnail_url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
   };
 }

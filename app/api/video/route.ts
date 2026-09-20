@@ -1,19 +1,32 @@
 import type { Video } from "@/lib/learning";
-import { parseWatchPage, readTextLimited, videoIdFrom } from "@/lib/youtube-playlist";
+import { parseWatchPage, readTextLimited, videoFromOEmbed, videoFromPlayerResponse, videoIdFrom } from "@/lib/youtube-playlist";
 
 export const runtime = "edge";
 
 // Watch pages are ~1.4 MB each, so one request resolves at most this many videos.
 const MAX_IDS = 10;
 
+const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; JevFeed/1.0)" };
+const cached = (ttl: number, init: RequestInit = {}) => ({ ...init, headers: { ...HEADERS, ...init.headers }, signal: AbortSignal.timeout(8_000), cf: { cacheTtl: ttl } }) as RequestInit;
+
+/**
+ * Three sources, richest first. The innertube player endpoint is a 10 KB JSON that works from
+ * Cloudflare's network. The watch page is the same data inside 1.4 MB of HTML and is sometimes gated
+ * for datacenter addresses. oEmbed always answers but only knows title, author, and thumbnail.
+ */
 async function fetchVideo(id: string): Promise<Video | null> {
-  try {
-    const response = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(id)}&hl=en`, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; JevFeed/1.0)" }, signal: AbortSignal.timeout(10_000), cf: { cacheTtl: 86_400 },
-    } as RequestInit);
-    if (!response.ok) return null;
-    return parseWatchPage(await readTextLimited(response, 3_000_000), id);
-  } catch { return null; }
+  const fromPlayer = await fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", cached(86_400, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ videoId: id, context: { client: { clientName: "WEB", clientVersion: "2.20240101.00.00", hl: "en" } } }),
+  })).then(async (response) => response.ok ? videoFromPlayerResponse(await response.json(), id) : null).catch(() => null);
+  if (fromPlayer) return fromPlayer;
+
+  const fromPage = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(id)}&hl=en`, cached(86_400))
+    .then(async (response) => response.ok ? parseWatchPage(await readTextLimited(response, 3_000_000), id) : null).catch(() => null);
+  if (fromPage) return fromPage;
+
+  return fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}&format=json`, cached(86_400))
+    .then(async (response) => response.ok ? videoFromOEmbed(await response.json(), id) : null).catch(() => null);
 }
 
 /**

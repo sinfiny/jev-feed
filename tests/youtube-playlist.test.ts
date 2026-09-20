@@ -8,6 +8,8 @@ import {
   playlistIdFrom,
   readTextLimited,
   unescapeXml,
+  videoFromOEmbed,
+  videoFromPlayerResponse,
   videoIdFrom,
   viewsToNumber,
 } from "@/lib/youtube-playlist";
@@ -221,5 +223,23 @@ describe("parseWatchPage", () => {
 
   it("returns null when the page has no player response", () => {
     expect(parseWatchPage("<html>nothing</html>", "fffffffffff")).toBeNull();
+  });
+});
+
+describe("videoFromPlayerResponse and videoFromOEmbed", () => {
+  it("keeps metadata from an unplayable innertube response", () => {
+    const response = {
+      playabilityStatus: { status: "UNPLAYABLE" },
+      videoDetails: { videoId: "ggggggggggg", title: "Still described", author: "Chan", lengthSeconds: "90", viewCount: "10" },
+      microformat: { playerMicroformatRenderer: { category: "Science & Technology", description: { simpleText: "Body" } } },
+    };
+    expect(videoFromPlayerResponse(response, "ggggggggggg")).toMatchObject({ title: "Still described", durationSeconds: 90, category: "Science & Technology", description: "Body" });
+    expect(videoFromPlayerResponse({ playabilityStatus: { status: "ERROR" } }, "ggggggggggg")).toBeNull();
+  });
+
+  it("builds a minimal video from oEmbed", () => {
+    expect(videoFromOEmbed({ title: "Only a title", author_name: "Chan", thumbnail_url: "https://i.ytimg.com/vi/hhhhhhhhhhh/hqdefault.jpg" }, "hhhhhhhhhhh"))
+      .toEqual({ id: "hhhhhhhhhhh", title: "Only a title", channel: "Chan", description: "", thumbnail: "https://i.ytimg.com/vi/hhhhhhhhhhh/hqdefault.jpg" });
+    expect(videoFromOEmbed({ error: "nope" }, "hhhhhhhhhhh")).toBeNull();
   });
 });
