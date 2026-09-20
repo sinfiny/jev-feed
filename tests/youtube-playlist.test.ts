@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  durationToSeconds,
   isVideoOnlyYouTubeUrl,
   parsePlaylistFeed,
   parsePlaylistPage,
+  parseWatchPage,
   playlistIdFrom,
   readTextLimited,
   unescapeXml,
+  videoIdFrom,
+  viewsToNumber,
 } from "@/lib/youtube-playlist";
 
 const LIST = "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf";
@@ -139,5 +143,83 @@ describe("parsePlaylistPage", () => {
     };
     expect(parsePlaylistPage("<html></html>", LIST, 2, fallback)?.videos).toHaveLength(2);
     expect(parsePlaylistPage("<html></html>", LIST, 2)).toBeNull();
+  });
+});
+
+describe("videoIdFrom", () => {
+  it("accepts bare ids and every common video url shape", () => {
+    expect(videoIdFrom("WUvTyaaNkzM")).toBe("WUvTyaaNkzM");
+    expect(videoIdFrom("https://www.youtube.com/watch?v=WUvTyaaNkzM&t=10s")).toBe("WUvTyaaNkzM");
+    expect(videoIdFrom("https://youtu.be/WUvTyaaNkzM?si=abc")).toBe("WUvTyaaNkzM");
+    expect(videoIdFrom("https://youtube.com/shorts/WUvTyaaNkzM")).toBe("WUvTyaaNkzM");
+    expect(videoIdFrom("https://www.youtube.com/live/WUvTyaaNkzM")).toBe("WUvTyaaNkzM");
+    expect(videoIdFrom(`https://m.youtube.com/watch?v=WUvTyaaNkzM&list=${LIST}`)).toBe("WUvTyaaNkzM");
+  });
+
+  it("rejects other hosts, playlists without a video, and short ids", () => {
+    expect(videoIdFrom("https://vimeo.com/WUvTyaaNkzM")).toBe("");
+    expect(videoIdFrom(`https://www.youtube.com/playlist?list=${LIST}`)).toBe("");
+    expect(videoIdFrom("abc")).toBe("");
+  });
+});
+
+describe("durationToSeconds and viewsToNumber", () => {
+  it("converts badge and metadata text", () => {
+    expect(durationToSeconds("17:05")).toBe(1025);
+    expect(durationToSeconds("1:02:33")).toBe(3753);
+    expect(durationToSeconds("LIVE")).toBeUndefined();
+    expect(viewsToNumber("11M views")).toBe(11_000_000);
+    expect(viewsToNumber("4,465,289 views")).toBe(4_465_289);
+    expect(viewsToNumber("2.5K views")).toBe(2500);
+    expect(viewsToNumber("No views")).toBe(0);
+  });
+});
+
+const lockup = (contentId: string, title: string, badge: string, views: string) => JSON.stringify({
+  lockupViewModel: {
+    contentId,
+    contentImage: { thumbnailViewModel: {
+      image: { sources: [{ url: `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg?sqp=x` }] },
+      overlays: [{ thumbnailBottomOverlayViewModel: { badges: [{ thumbnailBadgeViewModel: { text: badge, badgeStyle: "DEFAULT" } }] } }],
+    } },
+    metadata: { lockupMetadataViewModel: {
+      title: { content: title },
+      image: { decoratedAvatarViewModel: { a11yLabel: "Go to channel Lockup Channel" } },
+      metadata: { contentMetadataViewModel: { metadataRows: [{ metadataParts: [{ text: { content: views } }, { text: { content: "9 years ago" } }] }] } },
+    } },
+  },
+}).slice(1, -1);
+
+describe("parsePlaylistPage with lockup view models", () => {
+  it("reads title, channel, duration and views from the lockup payload", () => {
+    const html = `<html>{${lockup("ddddddddddd", "Lockup lecture", "17:05", "11M views")}, ${lockup("eeeeeeeeeee", "A short", "0:45", "No views")}}</html>`;
+    const page = parsePlaylistPage(html, LIST, 10);
+    expect(page?.videos.map((video) => video.id)).toEqual(["ddddddddddd", "eeeeeeeeeee"]);
+    expect(page?.videos[0]).toMatchObject({ title: "Lockup lecture", channel: "Lockup Channel", durationSeconds: 1025, views: 11_000_000 });
+    expect(page?.videos[1]).toMatchObject({ durationSeconds: 45, views: 0 });
+  });
+});
+
+describe("parseWatchPage", () => {
+  const player = {
+    videoDetails: { videoId: "fffffffffff", title: "Limits explained", author: "Watch Channel", lengthSeconds: "1106", viewCount: "2598365", keywords: ["calculus", "limits"], shortDescription: "short" },
+    microformat: { playerMicroformatRenderer: {
+      category: "Education", publishDate: "2017-05-05T08:00:00-07:00",
+      description: { simpleText: "Full description.\n0:00 Intro\n2:15 The idea of a limit\n7:40 Epsilon and delta\n\nMore text." },
+    } },
+  };
+  const html = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};var meta = {};</script></html>`;
+
+  it("extracts rich metadata and chapter titles", () => {
+    expect(parseWatchPage(html, "fffffffffff")).toMatchObject({
+      id: "fffffffffff", title: "Limits explained", channel: "Watch Channel", durationSeconds: 1106, views: 2_598_365,
+      category: "Education", published: "2017-05-05T08:00:00-07:00", keywords: ["calculus", "limits"],
+      chapters: ["Intro", "The idea of a limit", "Epsilon and delta"],
+    });
+    expect(parseWatchPage(html, "fffffffffff")?.description).toContain("Full description.");
+  });
+
+  it("returns null when the page has no player response", () => {
+    expect(parseWatchPage("<html>nothing</html>", "fffffffffff")).toBeNull();
   });
 });

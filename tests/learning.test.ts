@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MASTERY,
+  formatDuration,
   parseLearningState,
   progressForPlaylist,
   rankVideos,
@@ -22,6 +23,25 @@ const playlist: Video[] = [
   video("bait", "INSANE graph hack you MUST WATCH!!! (shocking)", "Viral compilation."),
 ];
 
+describe("rankVideos with duration and category metadata", () => {
+  const neutral = (id: string, extra: Partial<Video>): Video => ({ ...video(id, "Graphs part " + id, "A video about graphs."), ...extra });
+
+  it("moves short clips below a full lecture in every template", () => {
+    const list = [neutral("clip", { durationSeconds: 40 }), neutral("lecture", { durationSeconds: 30 * 60 })];
+    for (const template of ["stretch", "balanced", "kids"] as const) {
+      expect(rankVideos(list, DEFAULT_MASTERY, [], template).map((item) => item.id)).toEqual(["lecture", "clip"]);
+    }
+    expect(rankVideos(list, DEFAULT_MASTERY, [], "kids").find((item) => item.id === "clip")?.signals).toContain("Short clip");
+  });
+
+  it("uses YouTube's category and chapters when they are known", () => {
+    const list = [neutral("fun", { category: "Entertainment" }), neutral("edu", { category: "Education", chapters: ["Intro", "Idea", "Proof"] })];
+    const ranked = rankVideos(list, DEFAULT_MASTERY, [], "kids");
+    expect(ranked.map((item) => item.id)).toEqual(["edu", "fun"]);
+    expect(ranked[0].signals).toEqual(expect.arrayContaining(["3 chapters", "Education"]));
+  });
+});
+
 describe("rankVideos", () => {
   it("excludes completed videos", () => {
     const ranked = rankVideos(playlist, DEFAULT_MASTERY, ["intro", "bait"]);
@@ -35,7 +55,7 @@ describe("rankVideos", () => {
         expect(metric).toBeGreaterThanOrEqual(1);
         expect(metric).toBeLessThanOrEqual(99);
       }
-      expect(item.signals).toHaveLength(3);
+      expect(item.signals.length).toBeGreaterThanOrEqual(3);
       expect(item.reason).not.toBe("");
     }
     const scores = ranked.map((item) => item.score);
@@ -95,5 +115,13 @@ describe("progressForPlaylist", () => {
     const state = { p: { mastery: 70, completed: ["a", "gone"] } };
     expect(progressForPlaylist(state, "p", ["a", "b"])).toEqual({ mastery: 70, completed: ["a"] });
     expect(progressForPlaylist(state, "p")).toEqual({ mastery: 70, completed: ["a", "gone"] });
+  });
+});
+
+describe("formatDuration", () => {
+  it("formats minutes and hours", () => {
+    expect(formatDuration(65)).toBe("1:05");
+    expect(formatDuration(3753)).toBe("1:02:33");
+    expect(formatDuration(undefined)).toBe("");
   });
 });

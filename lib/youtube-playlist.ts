@@ -29,6 +29,38 @@ export function playlistIdFrom(value: string) {
   } catch { return ""; }
 }
 
+const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/** Accepts a bare 11-character id or any youtube.com / youtu.be video link. Returns "" when nothing usable is found. */
+export function videoIdFrom(value: string) {
+  const raw = value.trim();
+  if (VIDEO_ID.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (!["youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "youtube-nocookie.com"].includes(host)) return "";
+    const fromQuery = url.searchParams.get("v") ?? "";
+    if (VIDEO_ID.test(fromQuery)) return fromQuery;
+    const fromPath = url.pathname.match(/^\/(?:shorts|live|embed|v)?\/?([A-Za-z0-9_-]{11})(?:[/?]|$)/)?.[1] ?? "";
+    return VIDEO_ID.test(fromPath) ? fromPath : "";
+  } catch { return ""; }
+}
+
+/** "17:05" or "1:02:33" to seconds. Returns undefined for anything else, such as "LIVE". */
+export function durationToSeconds(text: string) {
+  const parts = text.trim().split(":").map(Number);
+  if (!parts.length || parts.length > 3 || parts.some((part) => !Number.isFinite(part))) return undefined;
+  return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+/** "11M views", "4,465,289 views", "No views" to a number. */
+export function viewsToNumber(text: string) {
+  const match = text.replace(/,/g, "").match(/([\d.]+)\s*([KMB])?/i);
+  if (!match) return text.toLowerCase().startsWith("no") ? 0 : undefined;
+  const scale = { K: 1e3, M: 1e6, B: 1e9 }[match[2]?.toUpperCase() ?? ""] ?? 1;
+  return Math.round(Number(match[1]) * scale);
+}
+
 export function isVideoOnlyYouTubeUrl(value: string) {
   try {
     const url = new URL(value.trim());
@@ -117,6 +149,8 @@ export function parsePlaylistPage(html: string, playlistId: string, limit: numbe
     seen.add(id);
     const known = details.get(id);
     const thumbnails = (renderer.thumbnail as { thumbnails?: Array<{ url?: string }> } | undefined)?.thumbnails ?? [];
+    const lengthSeconds = Number(renderer.lengthSeconds);
+    const viewsText = textFrom(renderer.videoInfo).match(/[\d.,]+\s*[KMB]?\s*views?|no views/i)?.[0] ?? "";
     return [{
       id,
       title: textFrom(renderer.title) || known?.title || "Untitled video",
@@ -124,6 +158,8 @@ export function parsePlaylistPage(html: string, playlistId: string, limit: numbe
       description: textFrom(renderer.descriptionSnippet) || known?.description || "",
       thumbnail: thumbnails.at(-1)?.url || known?.thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
       published: known?.published,
+      durationSeconds: Number.isFinite(lengthSeconds) && lengthSeconds > 0 ? lengthSeconds : known?.durationSeconds,
+      views: viewsText ? viewsToNumber(viewsText) : known?.views,
     } satisfies Video];
   });
 
@@ -136,6 +172,9 @@ export function parsePlaylistPage(html: string, playlistId: string, limit: numbe
     const title = serialized.match(/"title":\{"content":"((?:\\.|[^"])*)"/)?.[1] ?? "";
     const thumbnail = serialized.match(/"url":"(https:\/\/i\.ytimg\.com\/vi\/[^"]+)"/)?.[1]?.replace(/\\u0026/g, "&") ?? "";
     const channel = serialized.match(/"a11yLabel":"Go to channel ((?:\\.|[^"])*)"/)?.[1] ?? "";
+    // The duration is a thumbnail badge such as "17:05"; the view count is the first metadata part.
+    const badge = serialized.match(/"thumbnailBadgeViewModel":\{"text":"(\d{1,2}(?::\d{2}){1,2})"/)?.[1];
+    const viewsText = serialized.match(/"metadataParts":\[\{"text":\{"content":"([^"]*views?)"/i)?.[1] ?? "";
     return [{
       id,
       title: title ? JSON.parse(`"${title}"`) as string : known?.title || "Untitled video",
@@ -143,6 +182,8 @@ export function parsePlaylistPage(html: string, playlistId: string, limit: numbe
       description: known?.description || "",
       thumbnail: thumbnail || known?.thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
       published: known?.published,
+      durationSeconds: badge ? durationToSeconds(badge) : known?.durationSeconds,
+      views: viewsText ? viewsToNumber(viewsText) : known?.views,
     } satisfies Video];
   });
 
@@ -153,5 +194,40 @@ export function parsePlaylistPage(html: string, playlistId: string, limit: numbe
   return {
     playlist: { id: playlistId, title: title ? unescapeXml(title) : fallback?.playlist.title || "YouTube playlist", channel: fallback?.playlist.channel || videos[0].channel },
     videos,
+  };
+}
+
+/**
+ * Reads the public watch page for one video. The embedded player response carries the full
+ * description, exact length, YouTube's category, view count, publish date, and uploader keywords.
+ * Chapter titles come from the description's timestamp lines when the creator added them.
+ */
+export function parseWatchPage(html: string, videoId: string): Video | null {
+  const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]*?\});(?:\s*<\/script>|\s*var\s)/);
+  if (!match) return null;
+  let response: { videoDetails?: Record<string, unknown>; microformat?: { playerMicroformatRenderer?: Record<string, unknown> } };
+  try { response = JSON.parse(match[1]); } catch { return null; }
+  const details = response.videoDetails ?? {};
+  const micro = response.microformat?.playerMicroformatRenderer ?? {};
+  const id = typeof details.videoId === "string" ? details.videoId : videoId;
+  const title = typeof details.title === "string" ? details.title : "";
+  if (!title) return null;
+  const description = textFrom(micro.description) || (typeof details.shortDescription === "string" ? details.shortDescription : "");
+  const lengthSeconds = Number(details.lengthSeconds ?? micro.lengthSeconds);
+  const views = Number(details.viewCount ?? micro.viewCount);
+  const thumbnails = (details.thumbnail as { thumbnails?: Array<{ url?: string }> } | undefined)?.thumbnails ?? [];
+  const chapters = [...description.matchAll(/^\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[-–—|:]?\s*(.+)$/gm)].map((line) => line[1].trim()).filter(Boolean);
+  return {
+    id,
+    title,
+    channel: typeof details.author === "string" ? details.author : typeof micro.ownerChannelName === "string" ? micro.ownerChannelName : "YouTube",
+    description: description.slice(0, 2000),
+    thumbnail: thumbnails.at(-1)?.url?.split("?")[0] || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+    published: typeof micro.publishDate === "string" ? micro.publishDate : undefined,
+    durationSeconds: Number.isFinite(lengthSeconds) && lengthSeconds > 0 ? lengthSeconds : undefined,
+    views: Number.isFinite(views) ? views : undefined,
+    category: typeof micro.category === "string" ? micro.category : undefined,
+    chapters: chapters.length >= 2 ? chapters.slice(0, 40) : undefined,
+    keywords: Array.isArray(details.keywords) ? details.keywords.filter((word): word is string => typeof word === "string").slice(0, 30) : undefined,
   };
 }
