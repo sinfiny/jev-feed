@@ -33,9 +33,9 @@ export const LEARNING_STATE_KEY = "keen-learning-state-v2";
 export const DEFAULT_MASTERY = 64;
 
 export const templateDefinitions: Record<FeedTemplate, { name: string; shortName: string; description: string }> = {
-  stretch: { name: "Deep Dive", shortName: "Deep", description: "Internals, first principles, proofs. The good 2 a.m. rabbit hole." },
-  balanced: { name: "Ship Mode", shortName: "Build", description: "Code, demos, implementation. Leave with something working." },
-  kids: { name: "No Slop", shortName: "Signal", description: "Maximum signal. Hype, reactions, and empty calories sink." },
+  stretch: { name: "Deepest first", shortName: "Depth", description: "Puts theory, internals, and first-principles explanations at the top." },
+  balanced: { name: "Practical first", shortName: "Practical", description: "Puts tutorials, demonstrations, and implementation videos at the top." },
+  kids: { name: "Low-distraction first", shortName: "Focus", description: "Moves clickbait and low-substance videos toward the bottom." },
 };
 
 const hardTerms = /advanced|proof|theorem|derive|derivation|architecture|internals|from scratch|deep dive|graduate|optimization|algorithm|geometry|paradox|formal/i;
@@ -80,28 +80,28 @@ export function rankVideos(videos: Video[], mastery: number, completed: string[]
           : clamp(depth * 0.34 + curiosity * 0.34 + difficulty * 0.2 + focus * 0.12 - tooHardPenalty * 0.3);
 
       const classification = template === "kids"
-        ? focus >= 78 && depth >= 65 ? "High signal" : focus < 55 ? "Possible slop" : "Worth a look"
+        ? focus >= 78 && depth >= 65 ? "High signal" : focus < 55 ? "Low signal" : "Mixed signal"
         : template === "balanced"
-          ? buildValue >= 76 ? "Build this" : hasPractical ? "Code along" : "Useful context"
-          : difficulty > mastery + 20 ? "Big-brain detour" : curiosity >= 76 ? "Rabbit-hole worthy" : "Core concept";
+          ? buildValue >= 76 ? "Practical" : hasPractical ? "Tutorial" : "Background"
+          : difficulty > mastery + 20 ? "Advanced" : curiosity >= 76 ? "Deep explanation" : "Foundation";
 
       const signals = [
-        hasGentle ? "Easy entry" : hasHard ? "Concept dense" : "Some prerequisites",
-        hasPractical ? "Hands-on" : hasCuriosity ? "Opens new tabs" : "Builds context",
-        focus >= 78 ? "High signal" : focus < 55 ? "Hype detected" : "Mixed signal",
+        hasGentle ? "Easy to start" : hasHard ? "Needs background knowledge" : "Some prior knowledge",
+        hasPractical ? "Includes practical examples" : hasCuriosity ? "Explores underlying ideas" : "Builds context",
+        focus >= 78 ? "Low distraction" : focus < 55 ? "Attention-grabbing language" : "Some distraction signals",
       ];
 
       const reason = template === "kids"
-        ? `${classification} · ${focus >= 78 ? "substance beats packaging" : "some attention bait remains"}`
+        ? `${classification} · ${focus >= 78 ? "few attention-grabbing signals" : "some attention-grabbing language"}`
         : template === "balanced"
-          ? `${classification} · ${hasPractical ? "concrete implementation and examples" : "useful before you start building"}`
+          ? `${classification} · ${hasPractical ? "includes implementation and examples" : "provides useful background"}`
           : difficulty > mastery + 20
-            ? "Big-brain detour · dense, but worth saving"
+            ? "Advanced · may require more background knowledge"
             : hasCuriosity
-              ? "Rabbit-hole worthy · follows the idea beneath the idea"
+              ? "Deep explanation · explores the ideas behind the topic"
               : hasHard
-                ? "Concept dense · rewards a slower watch"
-                : "Core concept · unlocks the deeper videos";
+                ? "Detailed · covers a technical concept carefully"
+                : "Foundation · introduces concepts used by later videos";
 
       return { ...video, difficulty, learnability, depth, clarity, focus, buildValue, curiosity, score, classification, signals, reason };
     })
