@@ -4,8 +4,6 @@ Jev lets a person curate a custom video feed from YouTube, imported from a playl
 
 Production runs at <https://jev.setavya.com>. Source lives at `github.com/sinfiny/jev-feed`.
 
-This document follows the shape of the T3 Code `AGENTS.md`. Sections that describe T3 Code's own product were replaced with Jev's. The philosophy sections were kept because they are the point.
-
 ## What makes Jev special?
 
 Three things we do not compromise on.
@@ -20,30 +18,31 @@ The app is one Worker with static assets. There are no servers, no cold-start-he
 
 ### 3. Private by default
 
-Learning progress never leaves the browser. Playlist fetches are server-side so YouTube never sees the viewer. Do not add tracking, accounts, or persistence without an explicit request from the developer.
+Learning progress and owned playlists live in the viewer's browser. Playlist fetches are server-side so YouTube never sees the viewer. Sign in is a username only, with no password, because the name is a label and not a secret. Analytics for published feeds is planned and is the first feature that needs server storage; build it to count views of a feed, not to profile people. No third-party trackers.
 
-## A note from Theo
+## How we like to work
 
-Copied from the T3 Code repository because it applies here too.
+Ambitious ideas, simple systems, software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.
 
-> I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.
->
-> Channel both "measure twice, cut once" and "yagni". Fight scope creep. Try to honor the dev's intent in both a minimal and realistic fashion.
+Channel both "measure twice, cut once" and "yagni". Fight scope creep. Honor the developer's intent in both a minimal and realistic fashion.
+
+Right now Jev is a prototype whose job is to show reviewers what each feature is, how deep it goes, and what the app should look like. Ship the complete shape of a feature fast. A rebuild from first principles is planned once the shape is right, so do not gold-plate, and do not add infrastructure the shape does not need.
 
 The rest of this document is meant to help you navigate the codebase and make changes effectively. Think of these instructions less as "hard rules", more as "good defaults". The developer's preferences override anything here.
 
-Most contributions come from coding agents run in parallel through T3 Code, each in its own git worktree. Several dev servers, builds, and agents may be running on the same machine at once. Be careful about killing processes, touching shared state, or deploying.
+Most contributions come from coding agents, often several running in parallel on the same machine, each in its own git worktree. Several dev servers, builds, and agents may be active at once. Be careful about killing processes, touching shared state, or deploying.
 
 ## A small glossary
 
 - **you** means the agent reading this file and changing Jev.
 - **developer** means the person directing agents on this repo.
 - **viewer** means the person using a Jev feed to learn.
-- **organizer** means the person who publishes a feed for others.
+- **organizer** means the signed-in person who curates and publishes a feed for others.
 - **playlist** means a public YouTube playlist identified by its `list` id.
+- **owned playlist** means a playlist an organizer built in Jev, one video at a time or as a copy of a YouTube playlist. Each username owns up to five.
 - **template** means a ranking perspective: `stretch` (deepest first), `balanced` (practical first), or `kids` (low-distraction first).
 - **mastery** means the viewer's current learning edge, a number from 30 to 92 adjusted by "too hard / just right / too easy" feedback.
-- **feed** means the ranked list of videos for one playlist, template, and size.
+- **feed** means the ranked list of videos for one playlist or owned playlist and one template.
 - **Worker** means the deployed Cloudflare Worker that serves the app.
 
 ## The three ways to hurt yourself
@@ -106,7 +105,7 @@ Most code changes do not need documentation. Agents can read the code.
 
 ## How it works
 
-The viewer submits a playlist URL. `app/api/playlist/route.ts` validates it with `playlistIdFrom`, fetches YouTube's RSS feed and, for larger requests, the playlist page, then parses both with `lib/youtube-playlist.ts`. The client ranks the resulting videos with `rankVideos` in `lib/learning.ts`, filtered by completed ids and shaped by the chosen template and the viewer's mastery. Feedback adjusts mastery and completed ids in `localStorage`. `/feed` reads the playlist, template, and size from the URL so a published link needs no server state.
+An organizer either imports a playlist or builds one. For an import, `app/api/playlist/route.ts` validates the URL with `playlistIdFrom`, fetches YouTube's RSS feed and, for larger requests, the playlist page, then parses both with `lib/youtube-playlist.ts`. For single videos and for enriching videos that arrived without a description, `app/api/video/route.ts` reads public watch pages with `parseWatchPage`. Owned playlists are kept per username by `lib/account.ts`. The client ranks whichever videos are showing with `rankVideos` in `lib/learning.ts`, filtered by completed ids and shaped by the chosen template and the viewer's mastery. Feedback adjusts mastery and completed ids in `localStorage`. `/feed` reads either a playlist id or a list of video ids plus the template from the URL, so a published link needs no server state.
 
 Deployment: `npm run build` runs Vinext and the Cloudflare Vite plugin, which emit the Worker to `dist/server` and static assets to `dist/client`, plus a generated `dist/server/wrangler.json`. Worker configuration such as bindings and the custom domain route is set in `vite.config.ts` and flows into that generated file. Never edit `dist/` by hand.
 
@@ -127,6 +126,6 @@ Deployment: `npm run build` runs Vinext and the Cloudflare Vite plugin, which em
 
 - Complexity belongs at the parsing boundary. Ranking stays pure, UI stays dumb.
 - Inferred types over annotations. `any` is the enemy.
-- Heuristics in `lib/learning.ts` are regex-and-weights on purpose. Do not introduce an ML model or external API for ranking without an explicit ask.
+- Heuristics in `lib/learning.ts` are regex-and-weights on purpose and stay as the fallback that works with no key. The developer has asked for TypeSafe's Jev model to score videos against organizer-written rubrics; build that as an opt-in layer that produces the same metric shape, with weights and positioning kept in our code.
 - Viewers are trying to focus. No continuously repainting animations, no layout shift when data arrives, no spinners that lie.
 - If a rule here fights the task in front of you, say so loudly and get a human sign-off before breaking it.
