@@ -56,10 +56,11 @@ Most contributions come from coding agents run in parallel through T3 Code, each
 
 The most common defect is a change that works on the path you tested and is missing everywhere else. Before calling work done, walk this list and say which entries applied:
 
-- **Entry points.** The interactive feed at `/`, the anonymous published feed at `/feed`, and the API at `/api/playlist`. A ranking or parsing change affects all three.
+- **Entry points.** The interactive feed at `/`, the anonymous published feed at `/feed`, and the APIs at `/api/playlist` and `/api/video`. A ranking or parsing change affects all of them. `/feed` accepts either `playlist=` or a `videos=` id list.
 - **Templates.** `stretch`, `balanced`, and `kids` each have their own scoring, classification, and reason text in `lib/learning.ts`. A change to one needs a decision for the others.
-- **Playlist sources.** YouTube's RSS feed covers 15 videos. Larger playlists come from parsing the playlist page, which has two renderer formats (`playlistVideoRenderer` and `lockupViewModel`). Both parsers live in `lib/youtube-playlist.ts` and both need to keep working.
+- **Playlist sources.** YouTube's RSS feed covers 15 videos. Larger playlists come from parsing the playlist page, which has two renderer formats (`playlistVideoRenderer` and `lockupViewModel`). Both parsers live in `lib/youtube-playlist.ts` and both need to keep working. As of September 2026 YouTube serves only lockups. Single videos and enrichment go through `parseWatchPage`, which reads the embedded player response.
 - **Progress state.** Stored in `localStorage` under `LEARNING_STATE_KEY`. Changing its shape needs a migration path in `parseLearningState` so existing viewers do not lose progress.
+- **Account state.** Usernames and owned playlists are stored in `localStorage` under `ACCOUNT_KEY` and parsed by `parseAccountStore` in `lib/account.ts`. There is no password and no server. Same migration rule applies.
 - **Reverse states.** If you added a way in, add the way out. Mark complete needs unmark. Publish needs an obvious way to change the link.
 - **Docs.** Check whether the change makes `README.md` or this file inaccurate.
 
@@ -113,7 +114,8 @@ Deployment: `npm run build` runs Vinext and the Cloudflare Vite plugin, which em
 
 - `app/` - Next.js App Router pages and the API route. `app/page.tsx` is the interactive feed, `app/feed/` the published feed.
 - `lib/learning.ts` - ranking, templates, and progress state. Pure functions, no I/O.
-- `lib/youtube-playlist.ts` - URL validation, RSS and page parsing. Pure functions over strings.
+- `lib/youtube-playlist.ts` - URL validation, RSS, playlist page and watch page parsing. Pure functions over strings.
+- `lib/account.ts` - username accounts and owned playlists. Pure functions plus the `localStorage` read and write.
 - `components/` - React components. `components/ui/` is vendored shadcn; leave it verbatim.
 - `tests/` - Vitest unit tests. Config in `vitest.config.ts`, kept separate from `vite.config.ts` so tests never load the Cloudflare plugin.
 - `db/`, `drizzle/` - Drizzle schema for future D1 persistence. Not bound in production yet.

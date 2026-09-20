@@ -4,10 +4,27 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { Brain, ExternalLink, LoaderCircle, Play, ShieldCheck, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { rankVideos, templateDefinitions, type FeedTemplate, type RankedVideo, type Video } from "@/lib/learning";
+import { formatDuration, rankVideos, templateDefinitions, type FeedTemplate, type RankedVideo, type Video } from "@/lib/learning";
+import { videoIdFrom } from "@/lib/youtube-playlist";
 
 type Playlist = { id: string; title: string; channel: string };
 type ImportResult = { playlist?: Playlist; videos?: Video[]; error?: string };
+
+const CHUNK = 10;
+
+/** A feed built from individual video ids (`?videos=a,b,c&title=…`) hydrates through /api/video in small batches. */
+async function loadVideoList(ids: string[], title: string, signal: AbortSignal): Promise<ImportResult> {
+  const videos: Video[] = [];
+  for (let start = 0; start < ids.length; start += CHUNK) {
+    const response = await fetch(`/api/video?ids=${encodeURIComponent(ids.slice(start, start + CHUNK).join(","))}`, { signal });
+    const result = await response.json() as { videos?: Video[]; error?: string };
+    if (!response.ok && !videos.length && start + CHUNK >= ids.length) throw new Error(result.error || "These videos could not be loaded.");
+    videos.push(...(result.videos ?? []));
+  }
+  const byId = new Map(videos.map((video) => [video.id, video]));
+  const ordered = ids.flatMap((id) => byId.get(id) ? [byId.get(id)!] : []);
+  return { playlist: { id: `videos:${ids.join(",")}`, title: title || "Shared feed", channel: ordered[0]?.channel ?? "YouTube" }, videos: ordered };
+}
 
 const isTemplate = (value: string | null): value is FeedTemplate => value === "stretch" || value === "balanced" || value === "kids";
 
@@ -30,12 +47,16 @@ export default function PublishedFeed() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const playlistId = params.get("playlist") ?? "";
+    const videoIds = (params.get("videos") ?? "").split(",").map(videoIdFrom).filter(Boolean).slice(0, 100);
     const requestedLimit = params.get("limit");
     const limit = requestedLimit === "50" || requestedLimit === "100" ? requestedLimit : "10";
-    if (!playlistId) { queueMicrotask(() => { setError("This published feed is missing its playlist."); setLoading(false); }); return; }
+    if (!playlistId && !videoIds.length) { queueMicrotask(() => { setError("This published feed is missing its playlist."); setLoading(false); }); return; }
     const controller = new AbortController();
-    void fetch(`/api/playlist?url=${encodeURIComponent(playlistId)}&limit=${limit}`, { signal: controller.signal })
-      .then(async (response) => { const result = await response.json() as ImportResult; if (!response.ok || !result.playlist || !result.videos) throw new Error(result.error || "This feed could not be loaded."); setPlaylist(result.playlist); setVideos(result.videos); })
+    const load = videoIds.length
+      ? loadVideoList(videoIds, params.get("title") ?? "", controller.signal)
+      : fetch(`/api/playlist?url=${encodeURIComponent(playlistId)}&limit=${limit}`, { signal: controller.signal }).then(async (response) => { const result = await response.json() as ImportResult; if (!response.ok) throw new Error(result.error || "This feed could not be loaded."); return result; });
+    void load
+      .then((result) => { if (!result.playlist || !result.videos?.length) throw new Error(result.error || "This feed could not be loaded."); setPlaylist(result.playlist); setVideos(result.videos); })
       .catch((cause) => { if (cause instanceof DOMException && cause.name === "AbortError") return; setError(cause instanceof Error ? cause.message : "This feed could not be loaded."); })
       .finally(() => setLoading(false));
     return () => controller.abort();
@@ -57,7 +78,7 @@ export default function PublishedFeed() {
 
       {top && <section className="mt-8 grid overflow-hidden rounded-[1.75rem] border border-[var(--acid)]/30 bg-[var(--acid)]/[0.07] lg:grid-cols-[.9fr_1.1fr]"><div className="relative min-h-64"><Image src={top.thumbnail} alt="" fill sizes="(min-width: 1024px) 45vw, 100vw" unoptimized className="object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" /><div className="absolute bottom-5 left-5"><span className="rounded-full bg-[var(--acid)] px-3 py-1 text-xs font-bold uppercase text-[var(--ink)]">Start here</span></div></div><div className="p-6 sm:p-8"><div className="flex items-center gap-2 text-xs uppercase tracking-[.16em] text-violet-300"><ShieldCheck className="size-4" /> {templateDefinitions[template].name} · rank {top.score}</div><h2 className="mt-3 font-display text-3xl leading-tight">{top.title}</h2><p className="mt-3 text-sm leading-6 text-white/50">{top.reason}. Signals: {top.signals.map((item) => item.toLowerCase()).join(", ")}.</p><div className="mt-5 grid grid-cols-2 gap-2">{template === "stretch" ? <><Insight label="Explores the topic deeply" value={top.depth} /><Insight label="Leads to related ideas" value={top.curiosity} /><Insight label="Prior knowledge needed" value={top.difficulty} /><Insight label="Low distraction" value={top.focus} /></> : template === "balanced" ? <><Insight label="Practical examples" value={top.buildValue} /><Insight label="Easy to start" value={top.learnability} /><Insight label="Explains clearly" value={top.clarity} /><Insight label="Low distraction" value={top.focus} /></> : <><Insight label="Low distraction" value={top.focus} /><Insight label="Explores the topic deeply" value={top.depth} /><Insight label="Explains clearly" value={top.clarity} /><Insight label="Practical examples" value={top.buildValue} /></>}</div><Button onClick={() => setSelected(top)} className="mt-6 h-12 w-full rounded-xl bg-[var(--acid)] text-[var(--ink)] hover:bg-[var(--acid-bright)]"><Play className="fill-current" /> Watch this video</Button></div></section>}
 
-      <div className="mt-8"><div className="mb-4 flex items-end justify-between"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-white/35">Full feed</p><h2 className="mt-2 font-display text-3xl">Ranked with reasons</h2></div><a href={`https://www.youtube.com/playlist?list=${playlist.id}`} target="_blank" rel="noreferrer" className="hidden items-center gap-1 text-sm text-white/40 hover:text-white sm:flex">Original playlist <ExternalLink className="size-4" /></a></div><div className="grid gap-3 lg:grid-cols-2">{ranked.map((video, index) => <article key={video.id} className="grid grid-cols-[120px_1fr] gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[150px_1fr]"><button onClick={() => setSelected(video)} className="relative aspect-video overflow-hidden rounded-xl bg-white/10"><Image src={video.thumbnail} alt="" fill sizes="150px" unoptimized className="object-cover" /><span className="absolute inset-0 grid place-items-center bg-black/20"><span className="grid size-10 place-items-center rounded-full bg-white text-black"><Play className="size-4 fill-current" /></span></span></button><div className="min-w-0"><div className="flex items-center justify-between gap-2"><span className="text-xs text-[var(--acid)]">#{index + 1} · {video.classification}</span><span className="font-display text-lg text-[var(--acid)]">{video.score}</span></div><h3 className="mt-1 line-clamp-2 font-display text-lg leading-tight">{video.title}</h3><p className="mt-2 line-clamp-2 text-xs leading-5 text-white/45">{video.reason}</p><div className="mt-2 flex gap-2 text-[11px] text-white/35"><span>Density {video.depth}</span><span>Build {video.buildValue}</span><span>Signal {video.focus}</span></div></div></article>)}</div></div>
+      <div className="mt-8"><div className="mb-4 flex items-end justify-between"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-white/35">Full feed</p><h2 className="mt-2 font-display text-3xl">Ranked with reasons</h2></div>{!playlist.id.startsWith("videos:") && <a href={`https://www.youtube.com/playlist?list=${playlist.id}`} target="_blank" rel="noreferrer" className="hidden items-center gap-1 text-sm text-white/40 hover:text-white sm:flex">Original playlist <ExternalLink className="size-4" /></a>}</div><div className="grid gap-3 lg:grid-cols-2">{ranked.map((video, index) => <article key={video.id} className="grid grid-cols-[120px_1fr] gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[150px_1fr]"><button onClick={() => setSelected(video)} className="relative aspect-video overflow-hidden rounded-xl bg-white/10"><Image src={video.thumbnail} alt="" fill sizes="150px" unoptimized className="object-cover" />{video.durationSeconds ? <span className="absolute bottom-1.5 right-1.5 z-10 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-white">{formatDuration(video.durationSeconds)}</span> : null}<span className="absolute inset-0 grid place-items-center bg-black/20"><span className="grid size-10 place-items-center rounded-full bg-white text-black"><Play className="size-4 fill-current" /></span></span></button><div className="min-w-0"><div className="flex items-center justify-between gap-2"><span className="text-xs text-[var(--acid)]">#{index + 1} · {video.classification}</span><span className="font-display text-lg text-[var(--acid)]">{video.score}</span></div><h3 className="mt-1 line-clamp-2 font-display text-lg leading-tight">{video.title}</h3><p className="mt-2 line-clamp-2 text-xs leading-5 text-white/45">{video.reason}</p><div className="mt-2 flex gap-2 text-[11px] text-white/35"><span>Density {video.depth}</span><span>Build {video.buildValue}</span><span>Signal {video.focus}</span></div></div></article>)}</div></div>
     </section>
   </main>;
 }
