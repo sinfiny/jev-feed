@@ -30,9 +30,11 @@ The development server runs at `http://localhost:5173` by default.
 ## Quality checks
 
 ```bash
-npm run lint
+npm run check   # lint, typecheck, unit tests
 npm run build
 ```
+
+Unit tests live in `tests/` and run with Vitest. CI runs the same checks on every pull request.
 
 ## Project structure
 
@@ -43,12 +45,17 @@ npm run build
 
 ## Deployment
 
-The application builds as a Cloudflare-compatible Worker through Vinext. `.openai/hosting.json` preserves the existing ChatGPT Sites project association; it contains no deployment credential or secret.
+The application builds as a Cloudflare Worker through Vinext. `.openai/hosting.json` preserves the existing ChatGPT Sites project association; it contains no deployment credential or secret.
 
-The current Cloudflare deployment is available at [jev-feed.viod606.workers.dev](https://jev-feed.viod606.workers.dev). After authenticating Wrangler, build and deploy the current branch with:
+Production runs at [jev.setavya.com](https://jev.setavya.com), with [jev-feed.viod606.workers.dev](https://jev-feed.viod606.workers.dev) as a fallback hostname. Worker configuration, including the custom domain, lives in `vite.config.ts` and flows into the generated `dist/server/wrangler.json`.
 
-```bash
-npm run deploy
-```
+GitHub Actions in `.github/workflows/ci.yml` handles delivery:
 
-Wildcard per-feed custom subdomains are not implemented yet; the MVP uses shareable `/feed` links on the deployed Worker.
+- Every pull request runs lint, typecheck, tests, and build, then uploads a preview version of the Worker and comments its URL on the PR. Production traffic is unaffected.
+- Every push to `main` deploys to production.
+
+CI needs two repository secrets: `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. The token needs Workers Scripts Edit, Workers Routes Edit, Account Settings Read and Zone Read for `setavya.com`.
+
+A manual deploy from an authenticated Wrangler session is still possible with `npm run deploy`, but should be reserved for emergencies.
+
+Agent guidance for working in this repo is in `AGENTS.md`.
