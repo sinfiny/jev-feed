@@ -42,4 +42,10 @@ npm run build
 
 The application builds as a Cloudflare-compatible Worker through Vinext. `.openai/hosting.json` preserves the existing ChatGPT Sites project association; it contains no deployment credential or secret.
 
+The current Cloudflare deployment is available at [jev-feed.viod606.workers.dev](https://jev-feed.viod606.workers.dev). After authenticating Wrangler, build and deploy the current branch with:
+
+```bash
+npm run deploy
+```
+
 Public custom-domain and per-feed subdomain publishing are not implemented yet.
