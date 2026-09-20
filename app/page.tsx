@@ -1,13 +1,21 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, BookOpen, Brain, Check, ChevronDown, Clock3, Flame, Link2, LoaderCircle, Play, RotateCcw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import {
+  DEFAULT_MASTERY,
+  LEARNING_STATE_KEY,
+  progressForPlaylist,
+  rankVideos,
+  readLearningState,
+  type RankedVideo,
+  type Video,
+} from "@/lib/learning";
 
-type Video = { id: string; title: string; channel: string; description: string; thumbnail: string; published?: string };
-type RankedVideo = Video & { difficulty: number; learnability: number; score: number; reason: string };
 type Playlist = { id: string; title: string; channel: string };
 type ImportResult = { playlist: Playlist; videos: Video[]; error?: string };
 type Feedback = "easy" | "right" | "hard";
@@ -34,38 +42,11 @@ const sampleVideos: Video[] = [
   { id: "kfF40MiS7zA", title: "Derivative formulas through geometry", channel: "3Blue1Brown", description: "Deriving familiar rules visually through geometry and first principles.", thumbnail: "https://i.ytimg.com/vi/kfF40MiS7zA/hqdefault.jpg" },
 ];
 
-const hardTerms = /advanced|proof|theorem|derive|derivation|architecture|internals|from scratch|deep dive|graduate|optimization|algorithm|geometry|paradox|formal/i;
-const gentleTerms = /intro|introduction|beginner|basics|overview|explained|intuition|visual|essence|first/i;
-const practicalTerms = /tutorial|build|exercise|practice|project|example|how to|implementation/i;
-
-function rankVideos(videos: Video[], mastery: number, completed: string[]): RankedVideo[] {
-  return videos
-    .filter((video) => !completed.includes(video.id))
-    .map((video, index) => {
-      const text = `${video.title} ${video.description}`;
-      const difficulty = Math.max(25, Math.min(96, 48 + (hardTerms.test(text) ? 20 : 0) - (gentleTerms.test(text) ? 11 : 0) + Math.min(index * 2, 14)));
-      const gap = Math.abs(difficulty - mastery);
-      const learnability = Math.max(20, Math.round(100 - gap * 2.25));
-      const relevance = 88 + (practicalTerms.test(text) ? 7 : 0);
-      const tooHardPenalty = difficulty > mastery + 20 ? 22 : 0;
-      const score = Math.max(1, Math.min(99, Math.round(difficulty * 0.38 + learnability * 0.44 + relevance * 0.18 - tooHardPenalty)));
-      const reason = difficulty > mastery + 20
-        ? "Save for later · beyond your current edge"
-        : difficulty >= mastery - 4
-          ? "High concept density · right edge of your level"
-          : practicalTerms.test(text)
-            ? "Practice-heavy · reinforces current knowledge"
-            : "Builds the foundation for harder videos";
-      return { ...video, difficulty, learnability, score, reason };
-    })
-    .sort((a, b) => b.score - a.score || b.difficulty - a.difficulty);
-}
-
 export default function Home() {
   const [url, setUrl] = useState("");
   const [playlist, setPlaylist] = useState(samplePlaylist);
   const [videos, setVideos] = useState<Video[]>(sampleVideos);
-  const [mastery, setMastery] = useState(64);
+  const [mastery, setMastery] = useState(DEFAULT_MASTERY);
   const [completed, setCompleted] = useState<string[]>([]);
   const [selected, setSelected] = useState<RankedVideo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,18 +55,22 @@ export default function Home() {
   const [hasLoadedProgress, setHasLoadedProgress] = useState(false);
 
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem("keen-learning-state") ?? "null");
-      if (typeof saved?.mastery === "number") setMastery(saved.mastery);
-      if (Array.isArray(saved?.completed)) setCompleted(saved.completed);
-    } catch { /* Device-local learning state is optional. */ }
-    setHasLoadedProgress(true);
+    const saved = progressForPlaylist(readLearningState(), samplePlaylist.id, sampleVideos.map((video) => video.id));
+    queueMicrotask(() => {
+      setMastery(saved.mastery);
+      setCompleted(saved.completed);
+      setHasLoadedProgress(true);
+    });
   }, []);
 
   useEffect(() => {
     if (!hasLoadedProgress) return;
-    localStorage.setItem("keen-learning-state", JSON.stringify({ mastery, completed }));
-  }, [mastery, completed, hasLoadedProgress]);
+    const state = readLearningState();
+    localStorage.setItem(LEARNING_STATE_KEY, JSON.stringify({
+      ...state,
+      [playlist.id]: { mastery, completed },
+    }));
+  }, [mastery, completed, hasLoadedProgress, playlist.id]);
 
   const ranked = useMemo(() => rankVideos(videos, mastery, completed), [videos, mastery, completed]);
 
@@ -94,11 +79,14 @@ export default function Home() {
     setError("");
     try {
       const response = await fetch(`/api/playlist?url=${encodeURIComponent(playlistUrl)}`);
-      const result = await response.json() as ImportResult;
+      const result = await response.json().catch(() => ({ error: "The server returned an unexpected response." })) as ImportResult;
       if (!response.ok) throw new Error(result.error || "Could not import that playlist.");
+      if (!result.playlist?.id || !Array.isArray(result.videos) || !result.videos.length) throw new Error("That playlist did not contain any public videos.");
+      const saved = progressForPlaylist(readLearningState(), result.playlist.id, result.videos.map((video) => video.id));
       setPlaylist(result.playlist);
       setVideos(result.videos);
-      setCompleted([]);
+      setMastery(saved.mastery);
+      setCompleted(saved.completed);
       setSelected(null);
       setUrl(playlistUrl);
       return { title: result.playlist.title, videoCount: result.videos.length };
@@ -142,7 +130,8 @@ export default function Home() {
   }
 
   const top = ranked[0];
-  const progress = videos.length ? Math.round((completed.length / videos.length) * 100) : 0;
+  const completedCount = videos.filter((video) => completed.includes(video.id)).length;
+  const progress = videos.length ? Math.round((completedCount / videos.length) * 100) : 0;
 
   return (
     <main className="min-h-screen bg-[var(--ink)] text-[var(--paper)]">
@@ -173,7 +162,7 @@ export default function Home() {
           <div className="space-y-3">
             {ranked.map((video, index) => (
               <article key={video.id} className={`group grid gap-4 rounded-2xl border p-3 transition sm:grid-cols-[170px_1fr_auto] sm:items-center ${index === 0 ? "border-[var(--acid)]/45 bg-[var(--acid)]/[0.07]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}>
-                <div className="relative aspect-video overflow-hidden rounded-xl bg-white/10"><img src={video.thumbnail || `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`} alt="" className="h-full w-full object-cover opacity-85 transition group-hover:scale-[1.03]" /><div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" /><span className="absolute bottom-2.5 left-3 font-display text-2xl text-white/90">{String(index + 1).padStart(2, "0")}</span>{index === 0 && <span className="absolute right-2.5 top-2.5 rounded-full bg-[var(--acid)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ink)]">Best next</span>}</div>
+                <div className="relative aspect-video overflow-hidden rounded-xl bg-white/10"><Image src={video.thumbnail || `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`} alt="" fill sizes="(min-width: 640px) 170px, 100vw" unoptimized className="object-cover opacity-85 transition group-hover:scale-[1.03]" /><div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" /><span className="absolute bottom-2.5 left-3 font-display text-2xl text-white/90">{String(index + 1).padStart(2, "0")}</span>{index === 0 && <span className="absolute right-2.5 top-2.5 rounded-full bg-[var(--acid)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ink)]">Best next</span>}</div>
                 <div className="min-w-0 py-1"><div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/40"><span>{video.channel}</span><span>Difficulty {video.difficulty}</span><span>Learnability {video.learnability}</span></div><h3 className="font-display text-xl leading-tight tracking-tight sm:text-2xl">{video.title}</h3><p className="mt-2 text-sm text-white/45">{video.reason}</p></div>
                 <div className="flex items-center justify-between gap-4 sm:flex-col sm:justify-center sm:px-3"><div className="text-left sm:text-center"><p className="font-display text-2xl text-[var(--acid)]">{video.score}</p><p className="text-[10px] uppercase tracking-wider text-white/35">Fit score</p></div><button onClick={() => setSelected(video)} className="grid size-11 place-items-center rounded-full bg-white text-[var(--ink)] transition group-hover:scale-105" aria-label={`Play ${video.title}`}><Play className="ml-0.5 size-4 fill-current" /></button></div>
               </article>
