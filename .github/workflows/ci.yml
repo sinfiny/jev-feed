@@ -79,7 +79,7 @@ jobs:
             --tag "pr-${{ github.event.pull_request.number }}" \
             --message "PR #${{ github.event.pull_request.number }} ${{ github.event.pull_request.head.sha }}" \
             | tee upload.log
-          url=$(grep -oE 'https://[a-z0-9-]+\.workers\.dev' upload.log | head -n1 || true)
+          url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' upload.log | head -n1 || true)
           echo "url=$url" >> "$GITHUB_OUTPUT"
       - name: Comment preview URL
         if: steps.creds.outputs.present == 'true' && steps.upload.outputs.url != ''
