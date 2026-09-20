@@ -1,6 +1,6 @@
 # Jev Feed
 
-Jev turns a public YouTube playlist into an adaptive, distraction-free learning feed. Videos are ranked around the viewer's current learning edge, and progress is saved locally per playlist.
+Jev lets you curate your own custom video feed from YouTube. Jev's ranking decides which video comes first, you share the feed with friends or children, and progress is saved locally per playlist. Analytics on who watches a feed is the next planned capability.
 
 ## Current capabilities
 

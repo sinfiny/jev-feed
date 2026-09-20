@@ -1,6 +1,6 @@
 # Jev Feed
 
-Jev turns a public YouTube playlist into an adaptive, distraction-free learning feed. A Cloudflare Worker (built with Vinext, a Next.js-compatible layer on Vite) fetches the playlist, ranks videos through one of three perspectives, and serves an interactive feed plus anonymous shareable `/feed` links. Progress is stored in the viewer's browser.
+Jev lets a person curate a custom video feed from YouTube, imported from a playlist or built one video at a time, and share it with friends or children. Jev's ranking decides which video comes first. A Cloudflare Worker (built with Vinext, a Next.js-compatible layer on Vite) fetches YouTube pages, ranks videos through one of three perspectives, and serves an interactive builder plus anonymous shareable `/feed` links. Progress and owned playlists are stored in the browser.
 
 Production runs at <https://jev.setavya.com>. Source lives at `github.com/sinfiny/jev-feed`.
 
