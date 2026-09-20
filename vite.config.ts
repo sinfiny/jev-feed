@@ -16,6 +16,11 @@ const managedLinux = readExecutionProfile() === "managed-linux";
 const localBindingConfig = {
   main: "vinext/server/fetch-handler",
   compatibility_flags: ["nodejs_compat"],
+  // Production hostname. Cloudflare manages the DNS record and certificate.
+  routes: [{ pattern: "jev.setavya.com", custom_domain: true }],
+  // Keep the workers.dev hostname and per-version preview URLs that CI uses for PRs.
+  workers_dev: true,
+  preview_urls: true,
   d1_databases: d1
     ? [
         {
