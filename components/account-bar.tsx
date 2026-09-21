@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { LogOut, UserRound } from "lucide-react";
+import { LogOut, UserRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -21,7 +21,7 @@ export function AccountBar({ username, onSignIn, onSignOut }: { username: string
     </div>;
   }
 
-  if (!open) return <Button variant="outline" onClick={() => setOpen(true)} className="rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10"><UserRound /> Sign in</Button>;
+  if (!open) return <Button variant="outline" onClick={() => setOpen(true)} className="rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10"><UserRound /> <span className="hidden sm:inline">Save playlists</span><span className="sm:hidden">Save</span></Button>;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -30,12 +30,13 @@ export function AccountBar({ username, onSignIn, onSignOut }: { username: string
     setName(""); setError(""); setOpen(false);
   }
 
-  return <form onSubmit={submit} className="flex flex-col items-end gap-1">
-    <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 p-1">
-      <Input autoFocus value={name} onChange={(event) => setName(event.target.value)} aria-label="Username" placeholder="Pick a username" className="h-8 w-44 border-0 bg-transparent text-sm text-white shadow-none placeholder:text-white/30 focus-visible:ring-0" />
-      <Button type="submit" size="sm" className="rounded-full bg-[var(--acid)] text-[var(--ink)] hover:bg-[var(--acid-bright)]">Continue</Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => { setOpen(false); setError(""); }} className="rounded-full text-white/50">Cancel</Button>
-    </div>
-    <p className="px-3 text-xs text-white/40">{error || "No password. Your name just labels your playlists in this browser."}</p>
-  </form>;
+  return <div className="fixed inset-0 z-50 grid place-items-end bg-black/70 p-3 sm:place-items-center" role="presentation" onMouseDown={() => { setOpen(false); setError(""); }}>
+    <form onSubmit={submit} onMouseDown={(event) => event.stopPropagation()} className="w-full max-w-md rounded-[1.5rem] border border-white/15 bg-[#1a1b17] p-5 shadow-2xl">
+      <div className="flex items-start justify-between gap-4"><div><h2 className="font-display text-2xl">Save playlists on this device</h2><p className="mt-2 text-sm leading-6 text-white/50">Choose a name to organize your playlists. There is no account or password.</p></div><Button type="button" size="icon" variant="ghost" onClick={() => { setOpen(false); setError(""); }} aria-label="Close"><X /></Button></div>
+      <label className="mt-5 block text-xs font-semibold uppercase tracking-[.14em] text-white/45" htmlFor="local-name">Your name</label>
+      <Input id="local-name" autoFocus value={name} onChange={(event) => setName(event.target.value)} aria-label="Your name" placeholder="Letters, numbers, dots or dashes" className="mt-2 h-12 border-white/15 bg-black/20 text-base text-white placeholder:text-white/30" />
+      {error && <p className="mt-2 text-sm text-red-300">{error}</p>}
+      <Button type="submit" className="mt-4 h-12 w-full rounded-xl bg-[var(--acid)] text-[var(--ink)] hover:bg-[var(--acid-bright)]">Save on this device</Button>
+    </form>
+  </div>;
 }
