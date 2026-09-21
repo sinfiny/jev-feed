@@ -41,9 +41,9 @@ export const LEARNING_STATE_KEY = "keen-learning-state-v2";
 export const DEFAULT_MASTERY = 64;
 
 export const templateDefinitions: Record<FeedTemplate, { name: string; shortName: string; description: string }> = {
-  stretch: { name: "Deepest first", shortName: "Depth", description: "Puts theory, internals, and first-principles explanations at the top." },
-  balanced: { name: "Practical first", shortName: "Practical", description: "Puts tutorials, demonstrations, and implementation videos at the top." },
-  kids: { name: "Low-distraction first", shortName: "Focus", description: "Moves clickbait and low-substance videos toward the bottom." },
+  stretch: { name: "Go deeper", shortName: "Depth", description: "Start with ideas, theory, and first principles." },
+  balanced: { name: "Learn by doing", shortName: "Practice", description: "Start with tutorials, examples, and demonstrations." },
+  kids: { name: "Stay focused", shortName: "Focus", description: "Start with calm, substantial videos and move clickbait down." },
 };
 
 const hardTerms = /advanced|proof|theorem|derive|derivation|architecture|internals|from scratch|deep dive|graduate|optimization|algorithm|geometry|paradox|formal/i;
