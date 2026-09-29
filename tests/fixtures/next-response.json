@@ -1,0 +1,110 @@
+{
+ "contents": {
+  "twoColumnWatchNextResults": {
+   "results": {
+    "results": {
+     "contents": [
+      {
+       "videoPrimaryInfoRenderer": {
+        "title": {
+         "runs": [
+          {
+           "text": "But what is a neural network? | Deep learning chapter 1"
+          }
+         ]
+        },
+        "viewCount": {
+         "videoViewCountRenderer": {
+          "viewCount": {
+           "simpleText": "24,542,770 views"
+          },
+          "shortViewCount": {
+           "simpleText": "24M views"
+          },
+          "originalViewCount": "0"
+         }
+        },
+        "dateText": {
+         "simpleText": "Oct 5, 2017"
+        },
+        "videoActions": {
+         "menuRenderer": {
+          "topLevelButtons": [
+           {
+            "segmentedLikeDislikeButtonViewModel": {
+             "likeButtonViewModel": {
+              "likeButtonViewModel": {
+               "toggleButtonViewModel": {
+                "toggleButtonViewModel": {
+                 "defaultButtonViewModel": {
+                  "buttonViewModel": {
+                   "iconName": "LIKE",
+                   "title": "563K",
+                   "accessibilityText": "like this video along with 563,461 other people"
+                  }
+                 }
+                }
+               }
+              }
+             },
+             "likeCountEntity": {
+              "key": "unset_like_count_entity_key"
+             }
+            }
+           }
+          ]
+         }
+        }
+       }
+      },
+      {
+       "videoSecondaryInfoRenderer": {
+        "owner": {
+         "videoOwnerRenderer": {
+          "thumbnail": {
+           "thumbnails": [
+            {
+             "url": "https://yt3.ggpht.com/ytc/AIdro_nFzZFPLxPZRHcE3SSwzdrbuWqfoWYwLAu0_2iO6blQYAU=s48-c-k-c0x00ffffff-no-rj",
+             "width": 48,
+             "height": 48
+            },
+            {
+             "url": "https://yt3.ggpht.com/ytc/AIdro_nFzZFPLxPZRHcE3SSwzdrbuWqfoWYwLAu0_2iO6blQYAU=s88-c-k-c0x00ffffff-no-rj",
+             "width": 88,
+             "height": 88
+            },
+            {
+             "url": "https://yt3.ggpht.com/ytc/AIdro_nFzZFPLxPZRHcE3SSwzdrbuWqfoWYwLAu0_2iO6blQYAU=s176-c-k-c0x00ffffff-no-rj",
+             "width": 176,
+             "height": 176
+            }
+           ]
+          },
+          "title": {
+           "runs": [
+            {
+             "text": "3Blue1Brown"
+            }
+           ]
+          },
+          "subscriberCountText": {
+           "accessibility": {
+            "accessibilityData": {
+             "label": "8.66 million subscribers"
+            }
+           },
+           "simpleText": "8.66M subscribers"
+          }
+         }
+        },
+        "attributedDescription": {
+         "content": "0:00 - Introduction example\n1:07 - Series preview\n2:42 - What are neurons?"
+        }
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

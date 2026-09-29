@@ -1,18 +1,22 @@
 import { LEARNING_STATE_KEY, parseLearningState, type Chapter, type Video } from "@/lib/learning";
 import { mergeVideos } from "@/lib/youtube-playlist";
+import { readStore, writeStore } from "@/lib/store";
 
 /**
  * The viewer's playlists and what they have done with each video, both kept in the browser.
- * Playlists are local copies of the playlists in the viewer's YouTube account, refreshed on each signed-in visit.
+ * Playlists are local copies of the playlists in the viewer's YouTube account. A visit re-reads only playlists
+ * whose first page changed, and fetches details only for videos it has not seen (see app/page.tsx).
  * Progress is keyed by video id, so a video marked done is done in every playlist that holds it.
- * Playlists (large, rarely written) and progress (small, written while watching) use separate keys.
+ * Playlists (large, rarely written) live in IndexedDB; progress (small, written while watching) in localStorage.
  */
+/** Where playlists lived before IndexedDB. Read once to migrate, then removed. */
 export const LIBRARY_KEY = "jev-library-v1";
 export const PROGRESS_KEY = "jev-progress-v1";
 /** The username-era store. Read once to migrate, never written. */
 const LEGACY_ACCOUNT_KEY = "jev-account-v1";
 export const MAX_PLAYLISTS = 12;
-export const MAX_PLAYLIST_VIDEOS = 100;
+/** Descriptions are kept this long. Chapters are read from the full text before it is cut. */
+const DESCRIPTION_CHARS = 2000;
 export const SPEEDS = [1, 1.25, 1.5, 1.75, 2] as const;
 
 export type LibraryPlaylist = {
@@ -21,6 +25,10 @@ export type LibraryPlaylist = {
   videos: Video[];
   /** The YouTube playlist this copies. A sync from the account matches on it. Missing on playlists from before sign-in. */
   sourcePlaylistId?: string;
+  /** The item count and first page of ids when last read. A visit whose first page matches skips the playlist. */
+  signature?: string;
+  /** The lens this playlist is ordered by in the sidebar. Playlist order when unset. */
+  lensId?: string;
 };
 
 export type Bookmark = { id: string; seconds: number; label: string };
@@ -62,6 +70,8 @@ function parseVideo(value: unknown): Video[] {
   const item = record(value);
   if (!item || typeof item.id !== "string" || typeof item.title !== "string") return [];
   const video = { ...item } as Video;
+  if (typeof video.description !== "string") video.description = "";
+  else video.description = video.description.slice(0, DESCRIPTION_CHARS);
   if (Array.isArray(item.chapters)) {
     const chapters = item.chapters.flatMap((chapter): Chapter[] => {
       const candidate = record(chapter);
@@ -77,16 +87,17 @@ function parsePlaylist(value: unknown): LibraryPlaylist[] {
   if (!item || typeof item.id !== "string" || typeof item.title !== "string") return [];
   const seen = new Set<string>();
   const videos = (Array.isArray(item.videos) ? item.videos.flatMap(parseVideo) : []).filter((video) => !seen.has(video.id) && !!seen.add(video.id));
-  return [{ id: item.id, title: item.title, videos: videos.slice(0, MAX_PLAYLIST_VIDEOS), sourcePlaylistId: typeof item.sourcePlaylistId === "string" ? item.sourcePlaylistId : undefined }];
+  const text = (value: unknown) => typeof value === "string" ? value : undefined;
+  return [{ id: item.id, title: item.title, videos, sourcePlaylistId: text(item.sourcePlaylistId), signature: text(item.signature), lensId: text(item.lensId) }];
 }
+
+/** Validates playlists read from IndexedDB or the older localStorage copy. */
+export const parseLibraryValue = (value: unknown): LibraryPlaylist[] => Array.isArray(value) ? value.flatMap(parsePlaylist).slice(0, MAX_PLAYLISTS) : [];
 
 /** Returns null when nothing is stored, which is the cue to migrate from the username-era store. */
 export function parseLibrary(raw: string | null): LibraryPlaylist[] | null {
   if (!raw) return null;
-  try {
-    const value: unknown = JSON.parse(raw);
-    return Array.isArray(value) ? value.flatMap(parsePlaylist).slice(0, MAX_PLAYLISTS) : [];
-  } catch { return []; }
+  try { return parseLibraryValue(JSON.parse(raw)); } catch { return []; }
 }
 
 export function parseProgress(raw: string | null): Progress | null {
@@ -137,19 +148,24 @@ export function migrateLegacy(accountRaw: string | null, learningRaw: string | n
   return { playlists, progress };
 }
 
-export function readLibrary(): { playlists: LibraryPlaylist[]; progress: Progress } {
+/**
+ * Playlists from IndexedDB, else the localStorage copy from before IndexedDB (moved over and removed),
+ * else the username-era store. Progress from localStorage, else the username-era store.
+ */
+export async function readLibrary(): Promise<{ playlists: LibraryPlaylist[]; progress: Progress }> {
   if (typeof window === "undefined") return { playlists: [], progress: emptyProgress() };
   const storage = window.localStorage;
-  const playlists = parseLibrary(storage.getItem(LIBRARY_KEY));
+  const stored = await readStore("library");
+  let playlists = stored === undefined ? parseLibrary(storage.getItem(LIBRARY_KEY)) : parseLibraryValue(stored);
+  if (stored === undefined && playlists) { await writeStore("library", playlists); storage.removeItem(LIBRARY_KEY); }
   const progress = parseProgress(storage.getItem(PROGRESS_KEY));
   if (playlists && progress) return { playlists, progress };
   const legacy = migrateLegacy(storage.getItem(LEGACY_ACCOUNT_KEY), storage.getItem(LEARNING_STATE_KEY));
-  return { playlists: playlists ?? legacy.playlists, progress: progress ?? legacy.progress };
+  playlists ??= legacy.playlists;
+  return { playlists, progress: progress ?? legacy.progress };
 }
 
-export function writeLibrary(playlists: LibraryPlaylist[]) {
-  if (typeof window !== "undefined") window.localStorage.setItem(LIBRARY_KEY, JSON.stringify(playlists));
-}
+export const writeLibrary = (playlists: LibraryPlaylist[]) => writeStore("library", playlists);
 
 export function writeProgress(progress: Progress) {
   if (typeof window !== "undefined") window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
@@ -157,32 +173,46 @@ export function writeProgress(progress: Progress) {
 
 const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
+/** Every video in the library by id, for knowing which ids a sync still has to fetch. */
+export const videosById = (playlists: LibraryPlaylist[]) => new Map(playlists.flatMap((playlist) => playlist.videos.map((video) => [video.id, video] as const)));
+
+/** Cheap fingerprint of a YouTube playlist: its item count and the ids on its first page. */
+export const playlistSignature = (total: number, firstPage: string[]) => `${total}:${firstPage.join(",")}`;
+
+/** Cuts a video down to what is stored: the description is capped once chapters have been read from it. */
+export const storedVideo = (video: Video): Video => video.description.length > DESCRIPTION_CHARS ? { ...video, description: video.description.slice(0, DESCRIPTION_CHARS) } : video;
+
 /**
  * Replaces the library with the playlists from the viewer's YouTube account, in the account's order.
- * A playlist already in the library keeps its id, so the last open video still reopens, and keeps the
- * descriptions and chapters enrichment already found. Playlists no longer in the account drop out; their progress stays.
+ * A playlist already in the library keeps its id, so the last open video still reopens, its lens, and the
+ * descriptions and chapters enrichment already found. An incoming playlist without videos is unchanged
+ * since the last visit and is kept as it was. Playlists no longer in the account drop out; their progress stays.
  */
-export function syncPlaylists(current: LibraryPlaylist[], incoming: { id: string; title: string; videos: Video[] }[]): LibraryPlaylist[] {
-  return incoming.slice(0, MAX_PLAYLISTS).map((source) => {
+export function syncPlaylists(current: LibraryPlaylist[], incoming: Array<{ id: string; title: string; videos?: Video[]; signature?: string }>): LibraryPlaylist[] {
+  return incoming.slice(0, MAX_PLAYLISTS).flatMap((source) => {
     const existing = current.find((playlist) => playlist.sourcePlaylistId === source.id);
+    if (!source.videos) return existing ? [{ ...existing, title: source.title }] : [];
     const known = new Map(existing?.videos.map((video) => [video.id, video]));
     const seen = new Set<string>();
-    const videos = source.videos.filter((video) => !seen.has(video.id) && !!seen.add(video.id)).slice(0, MAX_PLAYLIST_VIDEOS)
-      .map((video) => mergeVideos(video.id, video, known.get(video.id) ?? null)!);
-    return { id: existing?.id ?? newId("p"), title: source.title, videos, sourcePlaylistId: source.id };
+    const videos = source.videos.filter((video) => !seen.has(video.id) && !!seen.add(video.id))
+      .map((video) => storedVideo(mergeVideos(video.id, video, known.get(video.id) ?? null)!));
+    return [{ id: existing?.id ?? newId("p"), title: source.title, videos, sourcePlaylistId: source.id, signature: source.signature ?? existing?.signature, lensId: existing?.lensId }];
   });
 }
 
 /** Puts a video at the top of a playlist, or takes it out. Used to mirror a like into the Liked playlist. */
 export const setMembership = (playlists: LibraryPlaylist[], sourcePlaylistId: string, video: Video, member: boolean) =>
   playlists.map((playlist) => playlist.sourcePlaylistId !== sourcePlaylistId ? playlist
-    : { ...playlist, videos: [...member ? [video] : [], ...playlist.videos.filter((item) => item.id !== video.id)].slice(0, MAX_PLAYLIST_VIDEOS) });
+    : { ...playlist, videos: [...member ? [video] : [], ...playlist.videos.filter((item) => item.id !== video.id)] });
+
+export const setPlaylistLens = (playlists: LibraryPlaylist[], playlistId: string, lensId: string | undefined) =>
+  playlists.map((playlist) => playlist.id === playlistId ? { ...playlist, lensId } : playlist);
 
 /** Merges enriched metadata into every copy of a video, without changing order or membership. */
 export function mergeVideoDetails(playlists: LibraryPlaylist[], details: Video[]) {
   if (!details.length) return playlists;
   const byId = new Map(details.map((video) => [video.id, video]));
-  return playlists.map((playlist) => ({ ...playlist, videos: playlist.videos.map((video) => byId.has(video.id) ? mergeVideos(video.id, byId.get(video.id)!, video)! : video) }));
+  return playlists.map((playlist) => ({ ...playlist, videos: playlist.videos.map((video) => byId.has(video.id) ? storedVideo(mergeVideos(video.id, byId.get(video.id)!, video)!) : video) }));
 }
 
 const updateVideo = (progress: Progress, videoId: string, change: (current: VideoProgress) => VideoProgress): Progress =>

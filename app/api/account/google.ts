@@ -13,11 +13,16 @@ export class AccountError extends Error {
 
 const RECONNECT = "Jev needs access to your YouTube account. Use Allow YouTube access in the list.";
 
-export async function googleToken(request: Request) {
-  const client = clerk();
-  const { userId } = (await client.authenticateRequest(request, { acceptsToken: "session_token" })).toAuth() ?? {};
+/** The signed-in viewer's Clerk user id, from the session token the browser sends. */
+export async function viewerId(request: Request) {
+  const { userId } = (await clerk().authenticateRequest(request, { acceptsToken: "session_token" })).toAuth() ?? {};
   if (!userId) throw new AccountError("Sign in with Google first.", 401);
-  const { data } = await client.users.getUserOauthAccessToken(userId, "google");
+  return userId;
+}
+
+export async function googleToken(request: Request) {
+  const userId = await viewerId(request);
+  const { data } = await clerk().users.getUserOauthAccessToken(userId, "google");
   if (!data[0]?.token) throw new AccountError(RECONNECT, 403);
   return data[0].token;
 }

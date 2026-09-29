@@ -30,6 +30,8 @@ const localBindingConfig = {
         },
       ]
     : [],
+  // Published feeds (app/api/feeds). No id: `wrangler deploy` provisions the namespace on first deploy and reuses it after.
+  kv_namespaces: [{ binding: "FEEDS" }],
   r2_buckets: r2
     ? [
         {

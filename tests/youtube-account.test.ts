@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLiked, isoDurationSeconds, playlistVideoIdsFrom, playlistsFrom, videosFrom } from "@/lib/youtube-account";
+import { channelIdsFrom, channelsFrom, isLiked, isoDurationSeconds, playlistPageFrom, playlistVideoIdsFrom, playlistsFrom, videosFrom } from "@/lib/youtube-account";
 
 describe("YouTube Data API responses", () => {
   it("reads ISO 8601 durations", () => {
@@ -28,6 +28,20 @@ describe("YouTube Data API responses", () => {
     ] });
     expect(video).toMatchObject({ id: "aaaaaaaaaaa", title: "Limits", channel: "3Blue1Brown", durationSeconds: 1080, thumbnail: "https://i.ytimg.com/x.jpg", chapters: [{ start: 0, title: "Intro" }, { start: 250, title: "Epsilon delta" }] });
     expect(videosFrom({ items: [{ id: "c", snippet: { title: "No chapters", description: "Plain" }, contentDetails: { duration: "PT1M" } }] })[0].chapters).toBeUndefined();
+  });
+
+  it("reads one page of playlist ids with the item count and next token", () => {
+    expect(playlistPageFrom({ items: [{ contentDetails: { videoId: "a" } }], pageInfo: { totalResults: 1234 }, nextPageToken: "CDIQAA" })).toEqual({ ids: ["a"], total: 1234, next: "CDIQAA" });
+    expect(playlistPageFrom({})).toEqual({ ids: [], total: 0, next: "" });
+  });
+
+  it("reads views, likes and tags, and the channel's subscribers and avatar", () => {
+    const response = { items: [{ id: "aaaaaaaaaaa", snippet: { title: "Limits", channelId: "UC1", channelTitle: "3b1b", description: "", tags: ["math", 3] }, contentDetails: { duration: "PT5M" }, statistics: { viewCount: "5300000", likeCount: "120000" } }] };
+    expect(channelIdsFrom(response)).toEqual(["UC1"]);
+    const channels = channelsFrom({ items: [{ id: "UC1", statistics: { subscriberCount: "6700000" }, snippet: { thumbnails: { default: { url: "https://yt3.ggpht.com/a.jpg" } } } }, { id: "UC2", statistics: { subscriberCount: "10", hiddenSubscriberCount: true } }] });
+    expect(channels.get("UC2")?.subscribers).toBeUndefined();
+    expect(videosFrom(response, channels)[0]).toMatchObject({ views: 5_300_000, likes: 120_000, subscribers: 6_700_000, channelAvatar: "https://yt3.ggpht.com/a.jpg", keywords: ["math"], complete: true });
+    expect(videosFrom({ items: [{ id: "b", snippet: { title: "Hidden likes" }, statistics: { viewCount: "10" } }] })[0].likes).toBeUndefined();
   });
 
   it("reads a like", () => {
