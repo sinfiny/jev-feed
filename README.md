@@ -58,7 +58,7 @@ GitHub Actions in `.github/workflows/ci.yml` handles delivery:
 - Every pull request runs lint, typecheck, tests, and build, then uploads a preview version of the Worker and comments its URL on the PR. Production traffic is unaffected.
 - Every push to `main` deploys to production.
 
-CI needs two repository secrets, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, and a repository variable, `CLERK_PUBLISHABLE_KEY`, which the build inlines. The Worker needs `CLERK_SECRET_KEY` as a secret. The token needs Workers Scripts Edit, Workers Routes Edit, Account Settings Read and Zone Read for `setavya.com`.
+CI needs two repository secrets, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, and a repository variable, `CLERK_PUBLISHABLE_KEY`, which the build inlines. The Worker needs `CLERK_SECRET_KEY` as a secret. These are the keys of Clerk's production instance, which only serves `jev.setavya.com`, so sign-in does not work on PR preview URLs; test sign-in locally against the development instance. The token needs Workers Scripts Edit, Workers Routes Edit, Account Settings Read and Zone Read for `setavya.com`.
 
 A manual deploy from an authenticated Wrangler session is still possible with `npm run deploy`, but should be reserved for emergencies.
 

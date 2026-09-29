@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { UserButton, useAuth, useSignIn } from "@clerk/react";
+import { UserButton, useAuth, useSignIn, useUser } from "@clerk/react";
 import { Bookmark, Check, ChevronRight, ExternalLink, Moon, RotateCcw, RotateCw, Share2, ThumbsUp, X } from "lucide-react";
 import { QueueSidebar, type Selection } from "@/components/queue-sidebar";
 import { YouTubePlayer, type Clip, type PlayerHandle } from "@/components/youtube-player";
@@ -11,9 +11,15 @@ import {
   savePosition, setMembership, syncPlaylists, toggleChapterDone, toggleStatus, videoState, writeLibrary, writeProgress,
   type Moment, type Progress, type LibraryPlaylist,
 } from "@/lib/library";
-import { LIKED_PLAYLIST_ID, type AccountPlaylist } from "@/lib/youtube-account";
+import { LIKED_PLAYLIST_ID, YOUTUBE_SCOPE, type AccountPlaylist } from "@/lib/youtube-account";
 
 type VideoResult = { videos?: Video[]; error?: string };
+
+/** A failed call to app/api/account. 403 means the Google sign-in lacks YouTube access. */
+class AccountError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+const lacksYouTube = (cause: unknown) => cause instanceof AccountError && cause.status === 403;
 
 const ENRICH_CHUNK = 10;
 const SAVE_EVERY_SECONDS = 5;
@@ -58,6 +64,8 @@ export default function Home() {
 
 function Library() {
   const { getToken } = useAuth();
+  const { user } = useUser();
+  const [needsYouTube, setNeedsYouTube] = useState(false);
   const [playlists, setPlaylists] = useState<LibraryPlaylist[]>([]);
   const [progress, setProgress] = useState<Progress>(emptyProgress);
   const [loaded, setLoaded] = useState(false);
@@ -84,7 +92,7 @@ function Library() {
   const account = useCallback(async <T,>(path: string, init: RequestInit = {}) => {
     const response = await fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${await getToken()}` } });
     const result = await response.json().catch(() => ({ error: "The server returned an unexpected response." })) as T & { error?: string };
-    if (!response.ok) throw new Error(result.error || "Your YouTube account could not be reached.");
+    if (!response.ok) throw new AccountError(result.error || "Your YouTube account could not be reached.", response.status);
     return result;
   }, [getToken]);
   useEffect(() => { if (!message) return; const timer = setTimeout(() => setMessage(null), message.error ? 6000 : 2500); return () => clearTimeout(timer); }, [message]);
@@ -135,7 +143,11 @@ function Library() {
           return kept.length ? [{ ...source, videos: kept }] : [];
         })));
         if (results.some((result) => !result.videos)) say("Some playlists could not be refreshed.", true);
-      } catch (cause) { if (!stopped) say(cause instanceof Error ? cause.message : "Your playlists could not be loaded.", true); }
+      } catch (cause) {
+        if (stopped) return;
+        if (lacksYouTube(cause)) setNeedsYouTube(true);
+        else say(cause instanceof Error ? cause.message : "Your playlists could not be loaded.", true);
+      }
       finally { if (!stopped) setSyncing(false); }
     })();
     return () => { stopped = true; };
@@ -145,9 +157,20 @@ function Library() {
   useEffect(() => {
     if (!video) return;
     let stopped = false;
-    account<{ liked: boolean }>(`/api/account/like?id=${video.id}`).then(({ liked: value }) => { if (!stopped) setLike({ videoId: video.id, liked: value }); }, () => undefined);
+    account<{ liked: boolean }>(`/api/account/like?id=${video.id}`).then(({ liked: value }) => { if (!stopped) setLike({ videoId: video.id, liked: value }); }, (cause) => { if (!stopped && lacksYouTube(cause)) setNeedsYouTube(true); });
     return () => { stopped = true; };
   }, [video, account]);
+
+  // Someone who unticked YouTube on Google's consent screen is signed in but can't load anything. This asks Google again for that one scope.
+  async function allowYouTube() {
+    const google = user?.externalAccounts.find((item) => item.provider === "google");
+    if (!google) return;
+    try {
+      const updated = await google.reauthorize({ additionalScopes: [YOUTUBE_SCOPE], redirectUrl: window.location.href });
+      const next = updated.verification?.externalVerificationRedirectURL;
+      if (next) window.location.assign(next.toString());
+    } catch { say("Google did not open. Try again.", true); }
+  }
 
   // Mirrors the like into the Liked playlist, except that a video open from Liked stays put until the next sync.
   const toggleLike = useCallback(async () => {
@@ -155,7 +178,7 @@ function Library() {
     const mirror = (value: boolean) => { if (value || playlist?.sourcePlaylistId !== LIKED_PLAYLIST_ID) setPlaylists((current) => setMembership(current, LIKED_PLAYLIST_ID, video, value)); };
     setLike({ videoId: video.id, liked: !liked }); mirror(!liked);
     try { await account("/api/account/like", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: video.id, liked: !liked }) }); }
-    catch (cause) { setLike({ videoId: video.id, liked }); mirror(liked); say(cause instanceof Error ? cause.message : "The like did not reach YouTube.", true); }
+    catch (cause) { setLike({ videoId: video.id, liked }); mirror(liked); if (lacksYouTube(cause)) setNeedsYouTube(true); say(cause instanceof Error ? cause.message : "The like did not reach YouTube.", true); }
   }, [video, liked, playlist?.sourcePlaylistId, account, say]);
   useEffect(() => { if (loaded) writeProgress(progress); }, [progress, loaded]);
 
@@ -253,6 +276,10 @@ function Library() {
   return <div className="flex min-h-screen flex-col bg-[var(--ink)] text-[var(--paper)] lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
     <aside className="order-2 border-white/10 px-3 pb-10 pt-4 lg:sticky lg:top-0 lg:order-1 lg:h-screen lg:overflow-y-auto lg:border-r">
       <div className="mb-4 flex items-center gap-2 px-1"><span className="grid size-7 place-items-center rounded-full bg-[var(--acid)] text-xs font-bold text-[var(--ink)]">J</span><span className="font-display text-lg">Jev</span><span className="ml-auto grid size-7 place-items-center"><UserButton /></span></div>
+      {needsYouTube && <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-sm">
+        <p className="text-white/70">Jev needs your permission to read your YouTube playlists and likes.</p>
+        <button onClick={allowYouTube} className="mt-2 h-8 rounded-lg bg-white px-3 font-semibold text-black hover:bg-white/90">Allow YouTube access</button>
+      </div>}
       {loaded && <QueueSidebar playlists={playlists} progress={progress} selection={selection} onOpen={open} onToggleStatus={(id, status) => setProgress((current) => toggleStatus(current, id, status))} />}
     </aside>
 
@@ -306,8 +333,8 @@ function Library() {
         </section>
       </div> : loaded && <div className="grid min-h-[50vh] place-items-center px-6 py-16 text-center lg:min-h-screen">
         <div className="max-w-sm">
-          <p className="font-display text-2xl">{playlists.length ? "Pick a video" : syncing ? "Loading your playlists" : "Nothing to watch yet"}</p>
-          <p className="mt-2 text-sm leading-6 text-white/45">{playlists.length ? "Choose a video or one of its chapters from the list." : syncing ? "Reading Liked videos and your playlists from YouTube." : "Like a video or save one to a playlist on YouTube and it shows up here on your next visit."}</p>
+          <p className="font-display text-2xl">{playlists.length ? "Pick a video" : needsYouTube ? "Allow YouTube access" : syncing ? "Loading your playlists" : "Nothing to watch yet"}</p>
+          <p className="mt-2 text-sm leading-6 text-white/45">{playlists.length ? "Choose a video or one of its chapters from the list." : needsYouTube ? "Use the button in the list so Jev can read your playlists and likes." : syncing ? "Reading Liked videos and your playlists from YouTube." : "Like a video or save one to a playlist on YouTube and it shows up here on your next visit."}</p>
         </div>
       </div>}
     </main>

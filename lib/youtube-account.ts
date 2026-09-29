@@ -9,6 +9,9 @@ import { chaptersFrom } from "@/lib/youtube-playlist";
 /** YouTube's id for the signed-in viewer's Liked videos. playlistItems.list accepts it for the owner only. */
 export const LIKED_PLAYLIST_ID = "LL";
 
+/** The one Google scope Jev asks for beyond sign-in: read playlists and likes, and like videos. */
+export const YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube";
+
 export type AccountPlaylist = { id: string; title: string };
 
 const record = (value: unknown): Record<string, unknown> =>

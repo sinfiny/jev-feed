@@ -18,7 +18,7 @@ The app is one Worker with static assets. There are no servers, no cold-start-he
 
 ### 3. Private by default
 
-Playlists and progress live in the viewer's browser. Playlist fetches are server-side so YouTube never sees the viewer. There is no sign-in yet; Google sign-in to load private playlists and liked videos is the next planned slice. Analytics for published feeds is planned and is the first feature that needs server storage; build it to count views of a feed, not to profile people. No third-party trackers.
+Progress, bookmarks and a copy of the playlists live in the viewer's browser. Sign-in is Google only, through Clerk, and exists to read the viewer's own playlists and likes; the Google token stays in the Worker and never reaches the browser. Public fetches for `/feed` are server-side so YouTube never sees the viewer. Analytics for published feeds is planned and is the first feature that needs server storage; build it to count views of a feed, not to profile people. No third-party trackers.
 
 ## How we like to work
 
@@ -38,8 +38,8 @@ Most contributions come from coding agents, often several running in parallel on
 - **developer** means the person directing agents on this repo.
 - **viewer** means the person using a Jev feed to learn.
 - **organizer** means the signed-in person who curates and publishes a feed for others.
-- **playlist** means a public YouTube playlist identified by its `list` id.
-- **library** means the viewer's playlists in the sidebar: local copies of YouTube playlists, or lists built from pasted video links. Up to twelve.
+- **playlist** means a YouTube playlist identified by its `list` id. In the sidebar these are the viewer's own playlists plus Liked videos (`LL`); `/feed` reads public ones.
+- **library** means the viewer's playlists in the sidebar: local copies of Liked videos and their own YouTube playlists, refreshed from the account on every signed-in visit. Up to twelve.
 - **chapter** means a creator (or YouTube auto-generated) chapter with a start time. From the sidebar a chapter plays as its own clip, start to end.
 - **bookmark** means a moment the viewer saved with the `B` key, with an optional note. Bookmarks list next to chapters as places to start.
 - **snoozed** and **done** are per-video states. Snoozed videos sink below the rest of a playlist; done videos sink to the bottom.
@@ -57,9 +57,9 @@ Most contributions come from coding agents, often several running in parallel on
 
 The most common defect is a change that works on the path you tested and is missing everywhere else. Before calling work done, walk this list and say which entries applied:
 
-- **Entry points.** The sidebar and player at `/`, the anonymous published feed at `/feed`, and the APIs at `/api/playlist` and `/api/video`. A parsing change affects all of them. `/feed` accepts either `playlist=` or a `videos=` id list; it ranks only when the link carries a `template=`, otherwise it keeps the link's order.
+- **Entry points.** The sign-in screen and the sidebar and player at `/`, the anonymous published feed at `/feed`, the public APIs at `/api/playlist` and `/api/video`, and the signed-in APIs under `/api/account/`. A parsing change affects all of them. `/feed` accepts either `playlist=` or a `videos=` id list; it ranks only when the link carries a `template=`, otherwise it keeps the link's order.
 - **Chapter sources.** Chapters come from description timestamps (RSS feed, player response) or from the `next` response's chapter markers. All of them go through `chaptersFrom` or `inOrder` in `lib/youtube-playlist.ts` and must carry start times.
-- **Playlist sources.** YouTube's RSS feed covers 15 videos. Larger playlists come from parsing the playlist page, which has two renderer formats (`playlistVideoRenderer` and `lockupViewModel`). Both parsers live in `lib/youtube-playlist.ts` and both need to keep working. As of September 2026 YouTube serves only lockups. Single videos and enrichment go through `parseWatchPage`, which reads the embedded player response.
+- **Playlist sources.** Signed-in libraries come from the YouTube Data API (`lib/youtube-account.ts`). Public playlists for `/feed` come from scraping: YouTube's RSS feed covers 15 videos. Larger playlists come from parsing the playlist page, which has two renderer formats (`playlistVideoRenderer` and `lockupViewModel`). Both parsers live in `lib/youtube-playlist.ts` and both need to keep working. As of September 2026 YouTube serves only lockups. Single videos and enrichment go through `parseWatchPage`, which reads the embedded player response.
 - **Library and progress state.** Playlists are stored in `localStorage` under `LIBRARY_KEY` and per-video progress (status, position, bookmarks, done chapters, speed) under `PROGRESS_KEY`, both parsed in `lib/library.ts`. Changing either shape needs a migration path in `parseLibrary` or `parseProgress` so existing viewers do not lose anything. `migrateLegacy` carries the older username-era store (`jev-account-v1`, `LEARNING_STATE_KEY`) forward once.
 - **Reverse states.** If you added a way in, add the way out. Done and snooze toggle back. A bookmark can be deleted. A removed playlist keeps its progress.
 - **Docs.** Check whether the change makes `README.md` or this file inaccurate.
@@ -106,7 +106,7 @@ Most code changes do not need documentation. Agents can read the code.
 
 ## How it works
 
-The viewer pastes a link into the sidebar. For a playlist, `app/api/playlist/route.ts` validates the URL with `playlistIdFrom`, fetches YouTube's RSS feed and the playlist page, and parses both with `lib/youtube-playlist.ts`; `addPlaylist` in `lib/library.ts` stores the copy. Videos that arrive without a description (every lockup video) are enriched in batches of ten through `app/api/video/route.ts`, which is where most chapters come from. The player is YouTube's IFrame API wrapped by `components/youtube-player.tsx`; the page polls its time once a second to save the position and highlight the current chapter. `/feed` reads either a playlist id or a list of video ids from the URL, so a shared link needs no server state.
+The viewer signs in with Google (Clerk, `components/auth-provider.tsx`). The page then calls `app/api/account/`, which checks the Clerk session with `@clerk/backend`, fetches the viewer's Google token from Clerk, and calls the YouTube Data API for their playlists, the videos in each, and likes; `lib/youtube-account.ts` parses the responses and `syncPlaylists` in `lib/library.ts` stores the copies. Clerk runs through `@clerk/react` with no middleware, because `@clerk/nextjs` and its matcher do not run on Vinext. `/feed` still reads public playlists through `app/api/playlist/route.ts`, which parses YouTube's RSS feed and playlist page with `lib/youtube-playlist.ts`. Videos that arrive without a description are enriched in batches of ten through `app/api/video/route.ts`. The player is YouTube's IFrame API wrapped by `components/youtube-player.tsx`; the page polls its time once a second to save the position and highlight the current chapter. `/feed` reads either a playlist id or a list of video ids from the URL, so a shared link needs no server state.
 
 Deployment: `npm run build` runs Vinext and the Cloudflare Vite plugin, which emit the Worker to `dist/server` and static assets to `dist/client`, plus a generated `dist/server/wrangler.json`. Worker configuration such as bindings and the custom domain route is set in `vite.config.ts` and flows into that generated file. Never edit `dist/` by hand.
 

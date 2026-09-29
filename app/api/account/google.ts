@@ -11,7 +11,7 @@ export class AccountError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
-const RECONNECT = "Jev can't reach your YouTube account. Sign out and sign in again, and allow YouTube access.";
+const RECONNECT = "Jev needs access to your YouTube account. Use Allow YouTube access in the list.";
 
 export async function googleToken(request: Request) {
   const client = clerk();
