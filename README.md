@@ -25,7 +25,7 @@ npm ci
 npm run dev
 ```
 
-The development server runs at `http://localhost:5173` by default. Sign-in needs Clerk keys in `.env.local`: run `clerk env pull` after `clerk auth login` and `clerk link`. The Clerk instance's Google connection uses Jev's own Google OAuth client with the `https://www.googleapis.com/auth/youtube` scope, from a Google Cloud project with the YouTube Data API enabled.
+The development server runs at `http://localhost:5173` by default. Sign-in needs Clerk keys in `.env.local`: run `clerk env pull` after `clerk auth login` and `clerk link`. The Clerk instance's Google connection uses Jev's own Google OAuth client with the `https://www.googleapis.com/auth/youtube.force-ssl` additional scope, from a Google Cloud project with the YouTube Data API enabled. Configure that scope on the connection in both Clerk instances so a new viewer grants identity and YouTube access in the same Google flow; accounts that predate the setting get a one-time **Allow YouTube access** recovery prompt.
 
 Lens questions need `ANTHROPIC_API_KEY` in `.env.local` (and as a Worker secret in production). Without it everything else works and questions say Claude is not switched on. To cap spending, all organizers share 40 Claude calls a day (about 800 videos), set by `JUDGE_CALLS_PER_DAY` in `lib/judge.ts`. Publishing uses the `FEEDS` KV binding, which Miniflare provides locally.
 

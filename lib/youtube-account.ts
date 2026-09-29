@@ -10,7 +10,7 @@ import { chaptersFrom } from "@/lib/youtube-playlist";
 export const LIKED_PLAYLIST_ID = "LL";
 
 /** The one Google scope Jev asks for beyond sign-in: read playlists and likes, and like videos. */
-export const YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube";
+export const YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
 
 export type AccountPlaylist = { id: string; title: string };
 

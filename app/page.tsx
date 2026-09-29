@@ -12,6 +12,7 @@ import { lacksYouTube, useJev } from "@/components/use-jev";
 import { Watch } from "@/components/watch";
 import type { Clip, PlayerHandle } from "@/components/youtube-player";
 import { formatDuration } from "@/lib/learning";
+import { oauthErrorMessage } from "@/lib/auth";
 import { PRESETS } from "@/lib/lens";
 import { addVideos, createDraft } from "@/lib/feed";
 import {
@@ -43,6 +44,7 @@ function App() {
   const [clip, setClip] = useState<Clip | null>(null);
   const [chapterNow, setChapterNow] = useState<number | undefined>();
   const [like, setLike] = useState<{ videoId: string; liked: boolean } | null>(null);
+  const [connectingYouTube, setConnectingYouTube] = useState(false);
   const [mood, setMood] = useState<Mood>("calm");
   const player = useRef<PlayerHandle>(null);
   const lastSaved = useRef(0);
@@ -112,12 +114,21 @@ function App() {
 
   async function allowYouTube() {
     const google = user?.externalAccounts.find((item) => item.provider === "google");
-    if (!google) return;
+    if (!google) { say("Your Google account is not connected. Sign out, then sign in again.", true); return; }
+    setConnectingYouTube(true);
     try {
-      const updated = await google.reauthorize({ additionalScopes: [YOUTUBE_SCOPE], redirectUrl: window.location.href });
+      const updated = await google.reauthorize({
+        additionalScopes: [YOUTUBE_SCOPE],
+        redirectUrl: window.location.origin,
+        oidcLoginHint: google.emailAddress,
+      });
       const next = updated.verification?.externalVerificationRedirectURL;
-      if (next) window.location.assign(next.toString());
-    } catch { say("Google did not open. Try again.", true); }
+      if (!next) throw new Error("Google did not return an authorization page. Try again.");
+      window.location.assign(next.toString());
+    } catch (cause) {
+      say(oauthErrorMessage(cause, "Google authorization could not start. Try again."), true);
+      setConnectingYouTube(false);
+    }
   }
 
   // Mirrors the like into the Liked playlist, except that a video open from Liked stays put until the next sync.
@@ -217,7 +228,7 @@ function App() {
 
   const permission = jev.needsYouTube && <div className="flex items-start gap-3 rounded-2xl border-2 border-[var(--sun)]/40 bg-[var(--sun)]/10 p-3 text-sm">
     <Mascot size={36} mood="sad" /><div><p className="text-white/80">Jev needs permission to read your YouTube playlists and likes.</p>
-      <button onClick={allowYouTube} className="juicy mt-2 h-9 px-3 text-sm" style={{ "--tone": "var(--sun)" } as React.CSSProperties}>Allow YouTube access</button></div>
+      <button onClick={allowYouTube} disabled={connectingYouTube} className="juicy mt-2 h-9 px-3 text-sm" style={{ "--tone": "var(--sun)" } as React.CSSProperties}>{connectingYouTube ? "Opening Google…" : "Allow YouTube access"}</button></div>
   </div>;
 
   const empty = <div className="grid min-h-[60vh] place-items-center px-6 py-16 text-center lg:min-h-screen">
