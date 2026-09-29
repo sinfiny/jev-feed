@@ -1,25 +1,19 @@
 # Jev Feed
 
-Jev lets you curate your own custom video feed from YouTube. Jev's ranking decides which video comes first, you share the feed with friends or children, and progress is saved locally per playlist. Analytics on who watches a feed is the next planned capability.
+Jev is a calm place to work through YouTube playlists. Your playlists sit in a sidebar, each video opens into its chapters so a long video has more than one way in, and a control bar under the player handles speed, skipping, and one-key bookmarks. Everything you do is saved in your browser.
 
 ## Current capabilities
 
-- Import a public YouTube playlist from its URL.
-- Analyze 10, 50, or 100 videos when the playlist contains them.
-- Validate playlist URLs and fetch the public YouTube feed server-side.
-- Read duration, view count, YouTube category, publish date, keywords and chapter titles from public YouTube pages, with no API key.
-- Sign in with just a username (no password, browser-only) and own up to five playlists.
-- Build a playlist one video at a time from any YouTube video link, remove videos, or save an editable copy of an imported playlist.
-- Rank videos through learning-edge, balanced-foundation, or child-focused perspectives.
-- Show research depth, clarity, learnability, focus quality, and recommendation reasons.
-- Play videos in a focused embedded player.
-- Adjust future recommendations from “too hard,” “just right,” and “too easy” feedback.
-- Preserve progress for each playlist in the viewer's browser.
-- Publish a separate anonymous feed URL under `/feed` with its playlist, template, and size encoded in the link. Feeds built from individual videos encode their video ids instead, so no server state is needed.
+- Paste a public YouTube playlist link to copy up to 100 of its videos into the sidebar. Pasting it again refreshes the copy. Pasting a single video link adds it to the open playlist, or to "Saved videos".
+- See each video's chapters, with start times, without opening it. Chapters come from the description's timestamps or YouTube's own chapter markers (including auto-generated ones) and are read server-side with no API key.
+- Play a single chapter from start to end, or keep watching past it.
+- Play videos in YouTube's embedded player with Jev's control bar: 1× to 2× speed, 10-second skips, and bookmarks. Keys: `B` bookmark, `J`/`L` skip, `K` play or pause, `<`/`>` speed.
+- Bookmark a moment with one key and add a note to it afterwards. Bookmarks sit next to the chapters and are places to start from.
+- Resume a video where you stopped. The last video you had open comes back, paused, on your next visit.
+- Snooze a video (it sinks below the rest) or mark it done (it sinks to the bottom). Both toggle back. Finishing a video or a chapter marks it done.
+- Share a playlist as an anonymous `/feed` link that encodes its video ids, so no server state is needed. Older `/feed` links with a ranking template still rank.
 
-Accounts and owned playlists live in the browser's `localStorage`. This is the shape of the feature for review; a server-backed account needs D1, which is not bound yet.
-
-The next planned product slice is public feed publishing: an organizer chooses a playlist and ranking template, publishes it to a Cloudflare-managed subdomain, and shares an anonymous, instantly accessible feed with an audience.
+Playlists and progress live in the browser's `localStorage`. Google sign-in, to load private playlists and liked videos without pasting links, is the next planned slice.
 
 ## Development
 
@@ -43,12 +37,12 @@ Unit tests live in `tests/` and run with Vitest. CI runs the same checks on ever
 
 ## Project structure
 
-- `app/page.tsx` — the interactive learning feed.
+- `app/page.tsx` — the sidebar, player, and control bar.
 - `app/api/playlist/route.ts` — public YouTube playlist ingestion.
 - `app/api/video/route.ts` — single-video metadata from public watch pages (up to 10 per request).
-- `lib/account.ts` — username accounts and owned playlists, browser-only.
-- `lib/learning.ts` — ranking and device-local progress logic.
-- `lib/youtube-playlist.ts` — playlist URL validation and feed parsing.
+- `lib/library.ts` — playlists, per-video progress, bookmarks, and the migration from the username-era store.
+- `lib/learning.ts` — video types and the template ranking still used by older `/feed` links.
+- `lib/youtube-playlist.ts` — playlist URL validation, feed parsing, and chapter parsing.
 
 ## Deployment
 

@@ -1,6 +1,6 @@
 # Jev Feed
 
-Jev lets a person curate a custom video feed from YouTube, imported from a playlist or built one video at a time, and share it with friends or children. Jev's ranking decides which video comes first. A Cloudflare Worker (built with Vinext, a Next.js-compatible layer on Vite) fetches YouTube pages, ranks videos through one of three perspectives, and serves an interactive builder plus anonymous shareable `/feed` links. Progress and owned playlists are stored in the browser.
+Jev is a calm place to work through YouTube playlists: a sidebar of playlists, each video opening into its chapters, and a player with a control bar for speed, skips, and one-key bookmarks. Playlists can be shared with friends or children as anonymous `/feed` links. A Cloudflare Worker (built with Vinext, a Next.js-compatible layer on Vite) fetches and parses YouTube pages and serves the app. Playlists and progress are stored in the browser.
 
 Production runs at <https://jev.setavya.com>. Source lives at `github.com/sinfiny/jev-feed`.
 
@@ -18,7 +18,7 @@ The app is one Worker with static assets. There are no servers, no cold-start-he
 
 ### 3. Private by default
 
-Learning progress and owned playlists live in the viewer's browser. Playlist fetches are server-side so YouTube never sees the viewer. Sign in is a username only, with no password, because the name is a label and not a secret. Analytics for published feeds is planned and is the first feature that needs server storage; build it to count views of a feed, not to profile people. No third-party trackers.
+Playlists and progress live in the viewer's browser. Playlist fetches are server-side so YouTube never sees the viewer. There is no sign-in yet; Google sign-in to load private playlists and liked videos is the next planned slice. Analytics for published feeds is planned and is the first feature that needs server storage; build it to count views of a feed, not to profile people. No third-party trackers.
 
 ## How we like to work
 
@@ -39,10 +39,12 @@ Most contributions come from coding agents, often several running in parallel on
 - **viewer** means the person using a Jev feed to learn.
 - **organizer** means the signed-in person who curates and publishes a feed for others.
 - **playlist** means a public YouTube playlist identified by its `list` id.
-- **owned playlist** means a playlist an organizer built in Jev, one video at a time or as a copy of a YouTube playlist. Each username owns up to five.
-- **template** means a ranking perspective: `stretch` (deepest first), `balanced` (practical first), or `kids` (low-distraction first).
-- **mastery** means the viewer's current learning edge, a number from 30 to 92 adjusted by "too hard / just right / too easy" feedback.
-- **feed** means the ranked list of videos for one playlist or owned playlist and one template.
+- **library** means the viewer's playlists in the sidebar: local copies of YouTube playlists, or lists built from pasted video links. Up to twelve.
+- **chapter** means a creator (or YouTube auto-generated) chapter with a start time. From the sidebar a chapter plays as its own clip, start to end.
+- **bookmark** means a moment the viewer saved with the `B` key, with an optional note. Bookmarks list next to chapters as places to start.
+- **snoozed** and **done** are per-video states. Snoozed videos sink below the rest of a playlist; done videos sink to the bottom.
+- **template** means a ranking perspective (`stretch`, `balanced`, `kids`). Only older `/feed` links still use one.
+- **feed** means the anonymous `/feed` page for a shared playlist.
 - **Worker** means the deployed Cloudflare Worker that serves the app.
 
 ## The three ways to hurt yourself
@@ -55,12 +57,11 @@ Most contributions come from coding agents, often several running in parallel on
 
 The most common defect is a change that works on the path you tested and is missing everywhere else. Before calling work done, walk this list and say which entries applied:
 
-- **Entry points.** The interactive feed at `/`, the anonymous published feed at `/feed`, and the APIs at `/api/playlist` and `/api/video`. A ranking or parsing change affects all of them. `/feed` accepts either `playlist=` or a `videos=` id list.
-- **Templates.** `stretch`, `balanced`, and `kids` each have their own scoring, classification, and reason text in `lib/learning.ts`. A change to one needs a decision for the others.
+- **Entry points.** The sidebar and player at `/`, the anonymous published feed at `/feed`, and the APIs at `/api/playlist` and `/api/video`. A parsing change affects all of them. `/feed` accepts either `playlist=` or a `videos=` id list; it ranks only when the link carries a `template=`, otherwise it keeps the link's order.
+- **Chapter sources.** Chapters come from description timestamps (RSS feed, player response) or from the `next` response's chapter markers. All of them go through `chaptersFrom` or `inOrder` in `lib/youtube-playlist.ts` and must carry start times.
 - **Playlist sources.** YouTube's RSS feed covers 15 videos. Larger playlists come from parsing the playlist page, which has two renderer formats (`playlistVideoRenderer` and `lockupViewModel`). Both parsers live in `lib/youtube-playlist.ts` and both need to keep working. As of September 2026 YouTube serves only lockups. Single videos and enrichment go through `parseWatchPage`, which reads the embedded player response.
-- **Progress state.** Stored in `localStorage` under `LEARNING_STATE_KEY`. Changing its shape needs a migration path in `parseLearningState` so existing viewers do not lose progress.
-- **Account state.** Usernames and owned playlists are stored in `localStorage` under `ACCOUNT_KEY` and parsed by `parseAccountStore` in `lib/account.ts`. There is no password and no server. Same migration rule applies.
-- **Reverse states.** If you added a way in, add the way out. Mark complete needs unmark. Publish needs an obvious way to change the link.
+- **Library and progress state.** Playlists are stored in `localStorage` under `LIBRARY_KEY` and per-video progress (status, position, bookmarks, done chapters, speed) under `PROGRESS_KEY`, both parsed in `lib/library.ts`. Changing either shape needs a migration path in `parseLibrary` or `parseProgress` so existing viewers do not lose anything. `migrateLegacy` carries the older username-era store (`jev-account-v1`, `LEARNING_STATE_KEY`) forward once.
+- **Reverse states.** If you added a way in, add the way out. Done and snooze toggle back. A bookmark can be deleted. A removed playlist keeps its progress.
 - **Docs.** Check whether the change makes `README.md` or this file inaccurate.
 
 ## Dev servers
@@ -105,16 +106,16 @@ Most code changes do not need documentation. Agents can read the code.
 
 ## How it works
 
-An organizer either imports a playlist or builds one. For an import, `app/api/playlist/route.ts` validates the URL with `playlistIdFrom`, fetches YouTube's RSS feed and, for larger requests, the playlist page, then parses both with `lib/youtube-playlist.ts`. For single videos and for enriching videos that arrived without a description, `app/api/video/route.ts` reads public watch pages with `parseWatchPage`. Owned playlists are kept per username by `lib/account.ts`. The client ranks whichever videos are showing with `rankVideos` in `lib/learning.ts`, filtered by completed ids and shaped by the chosen template and the viewer's mastery. Feedback adjusts mastery and completed ids in `localStorage`. `/feed` reads either a playlist id or a list of video ids plus the template from the URL, so a published link needs no server state.
+The viewer pastes a link into the sidebar. For a playlist, `app/api/playlist/route.ts` validates the URL with `playlistIdFrom`, fetches YouTube's RSS feed and the playlist page, and parses both with `lib/youtube-playlist.ts`; `addPlaylist` in `lib/library.ts` stores the copy. Videos that arrive without a description (every lockup video) are enriched in batches of ten through `app/api/video/route.ts`, which is where most chapters come from. The player is YouTube's IFrame API wrapped by `components/youtube-player.tsx`; the page polls its time once a second to save the position and highlight the current chapter. `/feed` reads either a playlist id or a list of video ids from the URL, so a shared link needs no server state.
 
 Deployment: `npm run build` runs Vinext and the Cloudflare Vite plugin, which emit the Worker to `dist/server` and static assets to `dist/client`, plus a generated `dist/server/wrangler.json`. Worker configuration such as bindings and the custom domain route is set in `vite.config.ts` and flows into that generated file. Never edit `dist/` by hand.
 
 ## Where code lives
 
-- `app/` - Next.js App Router pages and the API route. `app/page.tsx` is the interactive feed, `app/feed/` the published feed.
-- `lib/learning.ts` - ranking, templates, and progress state. Pure functions, no I/O.
+- `app/` - Next.js App Router pages and the API route. `app/page.tsx` is the sidebar and player, `app/feed/` the published feed.
+- `lib/learning.ts` - video types, template ranking for older `/feed` links, and the legacy progress parser. Pure functions, no I/O.
 - `lib/youtube-playlist.ts` - URL validation, RSS, playlist page and watch page parsing. Pure functions over strings.
-- `lib/account.ts` - username accounts and owned playlists. Pure functions plus the `localStorage` read and write.
+- `lib/library.ts` - playlists, per-video progress, bookmarks, queue order, and the legacy migration. Pure functions plus the `localStorage` read and write.
 - `components/` - React components. `components/ui/` is vendored shadcn; leave it verbatim.
 - `tests/` - Vitest unit tests. Config in `vitest.config.ts`, kept separate from `vite.config.ts` so tests never load the Cloudflare plugin.
 - `db/`, `drizzle/` - Drizzle schema for future D1 persistence. Not bound in production yet.

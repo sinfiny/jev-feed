@@ -35,7 +35,7 @@ describe("rankVideos with duration and category metadata", () => {
   });
 
   it("uses YouTube's category and chapters when they are known", () => {
-    const list = [neutral("fun", { category: "Entertainment" }), neutral("edu", { category: "Education", chapters: ["Intro", "Idea", "Proof"] })];
+    const list = [neutral("fun", { category: "Entertainment" }), neutral("edu", { category: "Education", chapters: [{ start: 0, title: "Intro" }, { start: 60, title: "Idea" }, { start: 120, title: "Proof" }] })];
     const ranked = rankVideos(list, DEFAULT_MASTERY, [], "kids");
     expect(ranked.map((item) => item.id)).toEqual(["edu", "fun"]);
     expect(ranked[0].signals).toEqual(expect.arrayContaining(["3 chapters", "Education"]));

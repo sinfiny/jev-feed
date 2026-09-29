@@ -1,3 +1,5 @@
+export type Chapter = { start: number; title: string };
+
 export type Video = {
   id: string;
   title: string;
@@ -10,8 +12,8 @@ export type Video = {
   views?: number;
   /** YouTube's own category, e.g. "Education". Only known after watch-page enrichment. */
   category?: string;
-  /** Creator-defined chapter titles, when the description carries timestamps. */
-  chapters?: string[];
+  /** Creator chapters (or YouTube's auto-generated ones), each with its start time in seconds. */
+  chapters?: Chapter[];
   keywords?: string[];
 };
 
