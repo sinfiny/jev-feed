@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Video } from "@/lib/learning";
 import {
-  addBookmark, emptyProgress, migrateLegacy, momentsFor, parseLibrary, parseProgress, queueOrder, savePosition, setMembership, syncPlaylists, toggleChapterDone, toggleStatus, videoState,
+  addBookmark, emptyProgress, migrateLegacy, parseLibraryValue, playlistSignature, videosById, momentsFor, parseLibrary, parseProgress, queueOrder, savePosition, setMembership, syncPlaylists, toggleChapterDone, toggleStatus, videoState,
 } from "@/lib/library";
 
 const video = (id: string, extra: Partial<Video> = {}): Video => ({ id, title: `Video ${id}`, channel: "c", description: "d", thumbnail: "", ...extra });
@@ -52,6 +52,21 @@ describe("syncing from the YouTube account", () => {
     expect(synced[1].videos.map((item) => item.id)).toEqual(["b", "a"]);
     expect(synced[1].videos[1].chapters).toEqual(chapters);
     expect(synced[0].id).not.toBe("LL");
+  });
+
+  it("keeps an unchanged playlist as it was, with its lens, and has no video limit", () => {
+    const many = Array.from({ length: 1500 }, (_, index) => video(`v${index}`));
+    const current = [{ id: "p_1", title: "Liked videos", sourcePlaylistId: "LL", videos: many, signature: "1500:v0", lensId: "deep-dive" }];
+    const kept = syncPlaylists(current, [{ id: "LL", title: "Liked videos" }, { id: "PLnew", title: "Brand new" }]);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({ id: "p_1", signature: "1500:v0", lensId: "deep-dive" });
+    expect(kept[0].videos).toHaveLength(1500);
+    const changed = syncPlaylists(current, [{ id: "LL", title: "Liked videos", videos: [video("new"), ...many], signature: "1501:new" }]);
+    expect(changed[0]).toMatchObject({ id: "p_1", signature: "1501:new", lensId: "deep-dive" });
+    expect(changed[0].videos).toHaveLength(1501);
+    expect(playlistSignature(2, ["a", "b"])).toBe("2:a,b");
+    expect([...videosById(current).keys()]).toHaveLength(1500);
+    expect(parseLibraryValue(JSON.parse(JSON.stringify(changed)))[0].videos).toHaveLength(1501);
   });
 
   it("puts a liked video at the top of Liked and takes it out again", () => {

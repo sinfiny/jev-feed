@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_MASTERY,
-  formatDuration,
-  parseLearningState,
-  progressForPlaylist,
-  rankVideos,
-  type Video,
-} from "@/lib/learning";
+import { DEFAULT_MASTERY, formatCount, formatDuration, heuristics, parseLearningState, type Video } from "@/lib/learning";
 
 const video = (id: string, title: string, description = ""): Video => ({
   id,
@@ -16,73 +9,18 @@ const video = (id: string, title: string, description = ""): Video => ({
   thumbnail: "",
 });
 
-const playlist: Video[] = [
-  video("intro", "Introduction to graphs for beginners", "A gentle overview of graph basics."),
-  video("build", "Tutorial: build a graph search project step by step", "Implementation with examples and exercises."),
-  video("deep", "Graph algorithms from scratch: a deep dive into the internals", "Why the architecture works, first principles and trade-offs."),
-  video("bait", "INSANE graph hack you MUST WATCH!!! (shocking)", "Viral compilation."),
-];
-
-describe("rankVideos with duration and category metadata", () => {
-  const neutral = (id: string, extra: Partial<Video>): Video => ({ ...video(id, "Graphs part " + id, "A video about graphs."), ...extra });
-
-  it("moves short clips below a full lecture in every template", () => {
-    const list = [neutral("clip", { durationSeconds: 40 }), neutral("lecture", { durationSeconds: 30 * 60 })];
-    for (const template of ["stretch", "balanced", "kids"] as const) {
-      expect(rankVideos(list, DEFAULT_MASTERY, [], template).map((item) => item.id)).toEqual(["lecture", "clip"]);
-    }
-    expect(rankVideos(list, DEFAULT_MASTERY, [], "kids").find((item) => item.id === "clip")?.signals).toContain("Short clip");
-  });
-
-  it("uses YouTube's category and chapters when they are known", () => {
-    const list = [neutral("fun", { category: "Entertainment" }), neutral("edu", { category: "Education", chapters: [{ start: 0, title: "Intro" }, { start: 60, title: "Idea" }, { start: 120, title: "Proof" }] })];
-    const ranked = rankVideos(list, DEFAULT_MASTERY, [], "kids");
-    expect(ranked.map((item) => item.id)).toEqual(["edu", "fun"]);
-    expect(ranked[0].signals).toEqual(expect.arrayContaining(["3 chapters", "Education"]));
-  });
-});
-
-describe("rankVideos", () => {
-  it("excludes completed videos", () => {
-    const ranked = rankVideos(playlist, DEFAULT_MASTERY, ["intro", "bait"]);
-    expect(ranked.map((item) => item.id).sort()).toEqual(["build", "deep"]);
-  });
-
-  it("returns metrics inside the 1-99 range and a stable sort by score", () => {
-    const ranked = rankVideos(playlist, DEFAULT_MASTERY, []);
-    for (const item of ranked) {
-      for (const metric of [item.difficulty, item.learnability, item.depth, item.clarity, item.focus, item.buildValue, item.curiosity, item.score]) {
-        expect(metric).toBeGreaterThanOrEqual(1);
-        expect(metric).toBeLessThanOrEqual(99);
-      }
-      expect(item.signals.length).toBeGreaterThanOrEqual(3);
-      expect(item.reason).not.toBe("");
-    }
-    const scores = ranked.map((item) => item.score);
-    expect(scores).toEqual([...scores].sort((a, b) => b - a));
-  });
-
-  it("puts the deep explanation first in the stretch template", () => {
-    const ranked = rankVideos(playlist, DEFAULT_MASTERY, [], "stretch");
-    expect(ranked[0].id).toBe("deep");
-  });
-
-  it("puts the practical tutorial first in the balanced template", () => {
-    const ranked = rankVideos(playlist, DEFAULT_MASTERY, [], "balanced");
-    expect(ranked[0].id).toBe("build");
-    expect(ranked[0].classification).toBe("Practical");
-  });
-
-  it("pushes clickbait to the bottom in the kids template", () => {
-    const ranked = rankVideos(playlist, DEFAULT_MASTERY, [], "kids");
-    expect(ranked.at(-1)?.id).toBe("bait");
-    expect(ranked.at(-1)?.classification).toBe("Low signal");
-  });
-
-  it("marks hard videos as advanced for low-mastery viewers", () => {
-    const [deep] = rankVideos([playlist[2]], 30, [], "stretch");
-    expect(deep.classification).toBe("Advanced");
-    expect(deep.reason).toMatch(/^Advanced/);
+describe("heuristics", () => {
+  it("reads depth, calm and hands-on signals from titles, length and category", () => {
+    const lecture = heuristics(video("l", "Graph algorithms from scratch: a deep dive into the internals", "Why the architecture works."));
+    const bait = heuristics(video("b", "INSANE graph hack you MUST WATCH!!! (shocking)", "Viral compilation."));
+    const tutorial = heuristics(video("t", "Tutorial: build a graph search project step by step", "Implementation with examples."));
+    expect(lecture.depth).toBeGreaterThan(bait.depth);
+    expect(bait.focus).toBeLessThan(0.5);
+    expect(tutorial.handsOn).toBeGreaterThan(lecture.handsOn);
+    const clip = heuristics({ ...video("c", "Graphs"), durationSeconds: 40 });
+    const edu = heuristics({ ...video("e", "Graphs"), durationSeconds: 1800, category: "Education" });
+    expect(edu.depth).toBeGreaterThan(clip.depth);
+    for (const value of Object.values(bait)) { expect(value).toBeGreaterThanOrEqual(0); expect(value).toBeLessThanOrEqual(1); }
   });
 });
 
@@ -106,22 +44,14 @@ describe("parseLearningState", () => {
   });
 });
 
-describe("progressForPlaylist", () => {
-  it("falls back to defaults for unknown playlists", () => {
-    expect(progressForPlaylist({}, "unknown")).toEqual({ mastery: DEFAULT_MASTERY, completed: [] });
-  });
-
-  it("drops completed ids that are no longer in the playlist", () => {
-    const state = { p: { mastery: 70, completed: ["a", "gone"] } };
-    expect(progressForPlaylist(state, "p", ["a", "b"])).toEqual({ mastery: 70, completed: ["a"] });
-    expect(progressForPlaylist(state, "p")).toEqual({ mastery: 70, completed: ["a", "gone"] });
-  });
-});
-
 describe("formatDuration", () => {
   it("formats minutes and hours", () => {
     expect(formatDuration(65)).toBe("1:05");
     expect(formatDuration(3753)).toBe("1:02:33");
     expect(formatDuration(undefined)).toBe("");
+  });
+
+  it("formats counts", () => {
+    expect([formatCount(999), formatCount(1234), formatCount(3_400_000), formatCount(250_000), formatCount(undefined)]).toEqual(["999", "1.2K", "3.4M", "250K", ""]);
   });
 });

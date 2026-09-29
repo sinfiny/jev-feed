@@ -38,23 +38,52 @@ export const playlistsFrom = (value: unknown): AccountPlaylist[] => items(value)
 export const playlistVideoIdsFrom = (value: unknown) =>
   items(value).map((item) => text(record(item.contentDetails).videoId)).filter(Boolean);
 
-/** videos.list with snippet and contentDetails. Private and deleted videos are simply absent from the response. */
-export const videosFrom = (value: unknown): Video[] => items(value).flatMap((item) => {
+/** One page of playlistItems.list: ids in order, the playlist's item count, and the token for the next page. */
+export const playlistPageFrom = (value: unknown) => ({
+  ids: playlistVideoIdsFrom(value),
+  total: Number(record(record(value).pageInfo).totalResults) || 0,
+  next: text(record(value).nextPageToken),
+});
+
+const count = (value: unknown) => { const number = Number(value); return value !== undefined && value !== "" && Number.isFinite(number) ? number : undefined; };
+
+/** channels.list with statistics and snippet: subscriber count (absent when the channel hides it) and avatar, by channel id. */
+export const channelsFrom = (value: unknown) => new Map(items(value).flatMap((item) => {
+  const id = text(item.id);
+  const statistics = record(item.statistics);
+  const avatar = text(record(record(record(item.snippet).thumbnails).default).url);
+  return id ? [[id, { subscribers: statistics.hiddenSubscriberCount === true ? undefined : count(statistics.subscriberCount), channelAvatar: avatar || undefined }] as const] : [];
+}));
+
+/** The channel id of each video in a videos.list response, for asking channels.list about them. */
+export const channelIdsFrom = (value: unknown) => [...new Set(items(value).map((item) => text(record(item.snippet).channelId)).filter(Boolean))];
+
+/** videos.list with snippet, contentDetails and statistics. Private and deleted videos are simply absent from the response. */
+export const videosFrom = (value: unknown, channels: ReturnType<typeof channelsFrom> = new Map()): Video[] => items(value).flatMap((item) => {
   const id = text(item.id);
   const snippet = record(item.snippet);
   if (!id || !text(snippet.title)) return [];
   const description = text(snippet.description);
   const thumbnails = record(snippet.thumbnails);
   const chapters = chaptersFrom(description);
+  const statistics = record(item.statistics);
+  const channel = channels.get(text(snippet.channelId));
+  const tags = Array.isArray(snippet.tags) ? snippet.tags.filter((tag): tag is string => typeof tag === "string").slice(0, 30) : [];
   return [{
     id,
     title: text(snippet.title),
     channel: text(snippet.channelTitle),
-    description,
+    description: description.slice(0, 2000),
     thumbnail: text(record(thumbnails.high).url) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
     published: text(snippet.publishedAt) || undefined,
     durationSeconds: isoDurationSeconds(text(record(item.contentDetails).duration)),
     chapters: chapters.length ? chapters : undefined,
+    views: count(statistics.viewCount),
+    likes: count(statistics.likeCount),
+    subscribers: channel?.subscribers,
+    channelAvatar: channel?.channelAvatar,
+    keywords: tags.length ? tags : undefined,
+    complete: true,
   }];
 });
 
