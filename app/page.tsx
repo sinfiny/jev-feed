@@ -235,7 +235,7 @@ function App() {
   const main = view === "studio"
     ? <Studio jev={jev} author={user?.firstName ?? undefined} say={say} openId={studioId} setOpenId={setStudioId} />
     : view === "library"
-      ? <div className="lg:hidden"><div className="px-4 pb-3 pt-4"><h1 className="font-display text-3xl">Library</h1><div className="mt-1">{syncChip}</div>{permission && <div className="mt-3">{permission}</div>}</div>
+      ? <div className="mx-auto max-w-3xl"><div className="px-4 pb-3 pt-4"><h1 className="font-display text-3xl">Library</h1><div className="mt-1">{syncChip}</div>{permission && <div className="mt-3">{permission}</div>}</div>
         <LibraryScreen playlists={playlists} progress={progress} lenses={lenses} judgments={judgments} selection={selection} onOpen={open} onToggleStatus={(id, status) => toggle(id, status)} onLens={(id, lensId) => setPlaylists((current) => setPlaylistLens(current, id, lensId))} /></div>
       : video && clip && playlist
         ? <Watch player={player} playlist={playlist} video={video} clip={clip} chapter={chapter} chapterNow={chapterNow} moments={moments} progress={progress} setProgress={setProgress}
