@@ -109,11 +109,9 @@ export function PlayerDeck({ player, clip, video, moments, rate, onRate, onEnded
         {onNext && <button onClick={onNext} aria-label="Next video" title="Next video (N)" className="juicy-ghost size-9"><SkipForward className="size-4" /></button>}
         <button onClick={() => seek(now - 10)} aria-label="Back 10 seconds" title="Back 10s (J)" className="juicy-ghost size-9"><RotateCcw className="size-4" /></button>
         <button onClick={() => seek(now + 10)} aria-label="Forward 10 seconds" title="Forward 10s (L)" className="juicy-ghost size-9"><RotateCw className="size-4" /></button>
-        <span className="ml-1 min-w-0 truncate text-xs tabular-nums text-white/60 sm:text-sm">
-          <span className="text-white">{time(now)}</span> / {time(length)}
-          {chapter && <span className="hidden text-white/45 md:inline"> · {chapter.title}</span>}
-        </span>
-        <span className="flex-1" />
+        <span className="ml-1 shrink-0 whitespace-nowrap text-xs tabular-nums text-white/60 sm:text-sm"><span className="text-white">{time(now)}</span> / {time(length)}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-white/45 max-md:hidden">{chapter ? `· ${chapter.title}` : ""}</span>
+        <span className="flex-1 md:hidden" />
         <div role="group" aria-label="Playback speed" className="hidden rounded-xl bg-white/[0.06] p-0.5 lg:flex">
           {SPEEDS.map((speed) => <button key={speed} onClick={() => onRate(speed)} aria-pressed={rate === speed} className={`h-8 min-w-10 rounded-[10px] px-1.5 text-xs font-bold tabular-nums transition ${rate === speed ? "bg-[var(--paper)] text-[var(--ink)]" : "text-white/55 hover:text-white"}`}>{speed}×</button>)}
         </div>

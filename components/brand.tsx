@@ -36,7 +36,8 @@ export function Mascot({ mood = "calm", size = 48, look = [0, 0], className = ""
     sad: <path d="M44 73 Q50 67 56 73" fill="none" stroke={INK} strokeWidth={3.5} strokeLinecap="round" />,
   }[mood];
   return <svg viewBox="0 0 100 100" width={size} height={size} className={className} role="img" aria-label={title ?? "Jev"}>
-    <path d="M50 22 C50 16 52 12 55 9" fill="none" stroke={INK} strokeWidth={4} strokeLinecap="round" />
+    <path d="M50 22 C50 16 52 12 55 9" fill="none" stroke={INK} strokeWidth={7} strokeLinecap="round" />
+    <path d="M50 22 C50 16 52 12 55 9" fill="none" stroke="var(--lime)" strokeWidth={3} strokeLinecap="round" />
     <path d="M53 3.5 L63 9.2 L53 14.8 Z" fill="var(--pink)" stroke={INK} strokeWidth={3} strokeLinejoin="round" />
     <ellipse cx={39} cy={91} rx={7} ry={4} fill={INK} />
     <ellipse cx={61} cy={91} rx={7} ry={4} fill={INK} />

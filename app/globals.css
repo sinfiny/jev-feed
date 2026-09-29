@@ -88,16 +88,20 @@
   --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
-* { box-sizing: border-box; }
-html { background: var(--ink); color-scheme: dark; -webkit-tap-highlight-color: transparent; }
-body { margin: 0; background: var(--ink); color: var(--paper); font-family: var(--font-sans); }
-.font-display { font-family: var(--font-display); font-weight: 750; letter-spacing: -0.03em; font-variation-settings: "opsz" 96; }
-button, input, textarea, select { font: inherit; }
-button { cursor: pointer; }
-button:disabled { cursor: default; }
-::selection { background: var(--lime); color: var(--ink); }
-:focus-visible { outline: 2.5px solid var(--lime); outline-offset: 2px; border-radius: 10px; }
+@layer base {
+  * { box-sizing: border-box; }
+  html { background: var(--ink); color-scheme: dark; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--ink); color: var(--paper); font-family: var(--font-sans); }
+  button, input, textarea, select { font: inherit; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; }
+  ::selection { background: var(--lime); color: var(--ink); }
+  :focus-visible { outline: 2.5px solid var(--lime); outline-offset: 2px; border-radius: 10px; }
+}
 
+/* Component classes live in the components layer so Tailwind utilities (hidden, lg:flex, sizes) can still override them. */
+@layer components {
+.font-display { font-family: var(--font-display); font-weight: 750; letter-spacing: -0.03em; font-variation-settings: "opsz" 96; }
 /* A pressable sticker: solid fill, dark rim, a hard shadow it sinks into. Set --tone for the fill. */
 .juicy {
   --tone: var(--lime);
@@ -146,6 +150,7 @@ button:disabled { cursor: default; }
 .dial::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -7px; width: 24px; height: 24px; border-radius: 50%; background: var(--thumb, var(--paper)); border: 3px solid var(--ink); box-shadow: 0 3px 0 #000a; transition: transform .18s var(--spring); }
 .dial::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--thumb, var(--paper)); border: 3px solid var(--ink); box-shadow: 0 3px 0 #000a; }
 .dial:active::-webkit-slider-thumb { transform: scale(1.18); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

@@ -35,7 +35,7 @@ export function StatChips({ video, className = "" }: { video: Video; className?:
   const chips = [
     video.views !== undefined && { icon: <Eye className="size-3.5" />, text: `${formatCount(video.views)} views`, tone: "" },
     video.likes !== undefined && { icon: <ThumbsUp className="size-3.5" />, text: formatCount(video.likes), tone: "" },
-    ratio !== undefined && { icon: <Heart className="size-3.5" />, text: `${ratio < 1 ? ratio.toFixed(1) : Math.round(ratio)}% liked`, tone: ratio >= 4 ? "text-[var(--pink)]" : "", title: "Likes per hundred views. Above 4% is a crowd favorite." },
+    ratio !== undefined && { icon: <Heart className="size-3.5" />, text: `${ratio < 10 ? ratio.toFixed(1) : Math.round(ratio)}% liked`, tone: ratio >= 4 ? "text-[var(--pink)]" : "", title: "Likes per hundred views. Above 4% is a crowd favorite." },
     video.subscribers !== undefined && { icon: <Users className="size-3.5" />, text: `${formatCount(video.subscribers)} subs`, tone: "" },
     video.durationSeconds && { icon: <Timer className="size-3.5" />, text: formatDuration(video.durationSeconds), tone: "" },
     age(video.published) && { icon: <CalendarDays className="size-3.5" />, text: age(video.published), tone: "" },

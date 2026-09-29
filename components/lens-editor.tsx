@@ -37,7 +37,7 @@ function Words({ label, words, onChange, color }: { label: string; words: string
       {words.map((word) => <span key={word} className="animate-pop inline-flex items-center gap-1 rounded-full py-1 pl-2.5 pr-1 text-xs font-bold text-[var(--ink)]" style={{ background: color }}>
         {word}<button onClick={() => onChange(words.filter((item) => item !== word))} aria-label={`Remove ${word}`} className="grid size-4 place-items-center rounded-full hover:bg-black/15"><X className="size-3" /></button></span>)}
       <input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); add(); } }} onBlur={add}
-        placeholder={words.length ? "Add another" : "Type a word, press Enter"} className="h-7 min-w-28 flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-white/30" />
+        placeholder={words.length ? "Add another" : "Add a word"} className="h-7 min-w-28 flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-white/30" />
     </div>
   </div>;
 }
@@ -74,12 +74,12 @@ export function LensEditor({ lens, onChange, saved, onSave, onDelete, judged }: 
     <section>
       <div className="mb-1 flex items-baseline justify-between"><p className="text-xs font-bold uppercase tracking-wider text-white/45">Dials · what Jev reads from each video</p>
         <button onClick={() => setAllDials((value) => !value)} className="text-xs font-bold text-[var(--grape)] hover:underline">{allDials ? "Fewer" : `All ${DIAL_KEYS.length} dials`}</button></div>
-      <ul className="grid gap-x-6 gap-y-1 xl:grid-cols-2">
+      <ul className="grid gap-y-1">
         {visible.map((dial) => {
           const weight = lens.dials[dial] ?? 0;
           return <li key={dial} className="rounded-2xl px-1 py-1.5">
             <div className="flex items-baseline justify-between gap-2 text-sm"><span className="font-semibold" title={DIALS[dial].hint}>{DIALS[dial].label}</span>
-              <span className="text-xs font-bold" style={{ color: weight ? tone(weight) : "#ffffff55" }}>{weight ? `${WORD[String(weight) as keyof typeof WORD]}: ${weight > 0 ? DIALS[dial].seek : DIALS[dial].avoid}` : DIALS[dial].hint}</span></div>
+              <span className="text-xs font-bold" style={{ color: weight ? tone(weight) : "#ffffff55" }}>{weight ? `${WORD[String(weight) as keyof typeof WORD]}: ${weight > 0 ? DIALS[dial].seek : DIALS[dial].avoid}` : "Don't care"}</span></div>
             <WeightSlider value={weight} onChange={(value) => setDial(dial, value)} label={`${DIALS[dial].label}: from ${DIALS[dial].avoid} to ${DIALS[dial].seek}`} />
             <div className="-mt-1 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-white/30"><span>{DIALS[dial].avoid}</span><span>{DIALS[dial].seek}</span></div>
           </li>;
