@@ -30,8 +30,9 @@ const localBindingConfig = {
         },
       ]
     : [],
-  // Published feeds (app/api/feeds). No id: `wrangler deploy` provisions the namespace on first deploy and reuses it after.
-  kv_namespaces: [{ binding: "FEEDS" }],
+  // Published feeds (app/api/feeds) and the daily Claude allowance (app/api/judge). The namespace was made
+  // with `cf kv namespaces create`, so CI's token needs no KV permission. Local dev keeps its own copy in Miniflare.
+  kv_namespaces: [{ binding: "FEEDS", id: "0102b26f398045bb959c8981e7b15288" }],
   r2_buckets: r2
     ? [
         {
