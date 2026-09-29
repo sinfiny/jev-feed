@@ -3,7 +3,7 @@ import { mergeVideos } from "@/lib/youtube-playlist";
 
 /**
  * The viewer's playlists and what they have done with each video, both kept in the browser.
- * Playlists are local copies, imported from a YouTube playlist link or built one video link at a time.
+ * Playlists are local copies of the playlists in the viewer's YouTube account, refreshed on each signed-in visit.
  * Progress is keyed by video id, so a video marked done is done in every playlist that holds it.
  * Playlists (large, rarely written) and progress (small, written while watching) use separate keys.
  */
@@ -19,7 +19,7 @@ export type LibraryPlaylist = {
   id: string;
   title: string;
   videos: Video[];
-  /** Set when the playlist is a copy of a YouTube playlist, so importing it again refreshes the copy. */
+  /** The YouTube playlist this copies. A sync from the account matches on it. Missing on playlists from before sign-in. */
   sourcePlaylistId?: string;
 };
 
@@ -157,35 +157,26 @@ export function writeProgress(progress: Progress) {
 
 const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
-/** Adds a playlist, or refreshes the videos of an existing copy of the same YouTube playlist. */
-export function addPlaylist(playlists: LibraryPlaylist[], title: string, videos: Video[], sourcePlaylistId?: string) {
-  const seen = new Set<string>();
-  const unique = videos.filter((video) => !seen.has(video.id) && !!seen.add(video.id)).slice(0, MAX_PLAYLIST_VIDEOS);
-  const existing = sourcePlaylistId ? playlists.find((playlist) => playlist.sourcePlaylistId === sourcePlaylistId) : undefined;
-  if (existing) {
-    const known = new Map(existing.videos.map((video) => [video.id, video]));
-    // Fresh fields win, but a fresh import lacks the descriptions and chapters enrichment already found.
-    const playlist = { ...existing, title, videos: unique.map((video) => mergeVideos(video.id, video, known.get(video.id) ?? null)!) };
-    return { playlists: playlists.map((item) => item.id === existing.id ? playlist : item), playlist };
-  }
-  if (playlists.length >= MAX_PLAYLISTS) throw new Error(`Jev keeps up to ${MAX_PLAYLISTS} playlists. Remove one to make room.`);
-  const playlist: LibraryPlaylist = { id: newId("p"), title: title.trim().slice(0, 80) || "Saved videos", videos: unique, sourcePlaylistId };
-  return { playlists: [...playlists, playlist], playlist };
-}
-
-export const removePlaylist = (playlists: LibraryPlaylist[], playlistId: string) => playlists.filter((playlist) => playlist.id !== playlistId);
-
-export function addVideo(playlists: LibraryPlaylist[], playlistId: string, video: Video) {
-  return playlists.map((playlist) => {
-    if (playlist.id !== playlistId) return playlist;
-    if (playlist.videos.some((item) => item.id === video.id)) throw new Error("That video is already in this playlist.");
-    if (playlist.videos.length >= MAX_PLAYLIST_VIDEOS) throw new Error(`A playlist holds up to ${MAX_PLAYLIST_VIDEOS} videos.`);
-    return { ...playlist, videos: [...playlist.videos, video] };
+/**
+ * Replaces the library with the playlists from the viewer's YouTube account, in the account's order.
+ * A playlist already in the library keeps its id, so the last open video still reopens, and keeps the
+ * descriptions and chapters enrichment already found. Playlists no longer in the account drop out; their progress stays.
+ */
+export function syncPlaylists(current: LibraryPlaylist[], incoming: { id: string; title: string; videos: Video[] }[]): LibraryPlaylist[] {
+  return incoming.slice(0, MAX_PLAYLISTS).map((source) => {
+    const existing = current.find((playlist) => playlist.sourcePlaylistId === source.id);
+    const known = new Map(existing?.videos.map((video) => [video.id, video]));
+    const seen = new Set<string>();
+    const videos = source.videos.filter((video) => !seen.has(video.id) && !!seen.add(video.id)).slice(0, MAX_PLAYLIST_VIDEOS)
+      .map((video) => mergeVideos(video.id, video, known.get(video.id) ?? null)!);
+    return { id: existing?.id ?? newId("p"), title: source.title, videos, sourcePlaylistId: source.id };
   });
 }
 
-export const removeVideo = (playlists: LibraryPlaylist[], playlistId: string, videoId: string) =>
-  playlists.map((playlist) => playlist.id === playlistId ? { ...playlist, videos: playlist.videos.filter((video) => video.id !== videoId) } : playlist);
+/** Puts a video at the top of a playlist, or takes it out. Used to mirror a like into the Liked playlist. */
+export const setMembership = (playlists: LibraryPlaylist[], sourcePlaylistId: string, video: Video, member: boolean) =>
+  playlists.map((playlist) => playlist.sourcePlaylistId !== sourcePlaylistId ? playlist
+    : { ...playlist, videos: [...member ? [video] : [], ...playlist.videos.filter((item) => item.id !== video.id)].slice(0, MAX_PLAYLIST_VIDEOS) });
 
 /** Merges enriched metadata into every copy of a video, without changing order or membership. */
 export function mergeVideoDetails(playlists: LibraryPlaylist[], details: Video[]) {

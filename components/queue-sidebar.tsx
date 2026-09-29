@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { Bookmark, Check, ChevronRight, Moon, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Bookmark, Check, ChevronRight, Moon } from "lucide-react";
 import { formatDuration, type Video } from "@/lib/learning";
 import { momentsFor, queueOrder, type LibraryPlaylist, type Moment, type Progress, type VideoState } from "@/lib/library";
 
@@ -13,8 +13,6 @@ type Props = {
   selection: Selection | null;
   onOpen: (playlistId: string, videoId: string, moment?: Moment) => void;
   onToggleStatus: (videoId: string, status: "done" | "snoozed") => void;
-  onRemovePlaylist: (playlist: LibraryPlaylist) => void;
-  children?: ReactNode;
 };
 
 function StatusDot({ state }: { state: VideoState }) {
@@ -24,7 +22,7 @@ function StatusDot({ state }: { state: VideoState }) {
 }
 
 /** Playlists, the videos in each, and the chapters and bookmarks inside each video, as one tree of places to start. */
-export function QueueSidebar({ playlists, progress, selection, onOpen, onToggleStatus, onRemovePlaylist, children }: Props) {
+export function QueueSidebar({ playlists, progress, selection, onOpen, onToggleStatus }: Props) {
   const [closedPlaylists, setClosedPlaylists] = useState<Set<string>>(new Set());
   const [openVideos, setOpenVideos] = useState<Set<string>>(new Set());
   const toggle = (set: Set<string>, id: string) => { const next = new Set(set); if (!next.delete(id)) next.add(id); return next; };
@@ -66,20 +64,16 @@ export function QueueSidebar({ playlists, progress, selection, onOpen, onToggleS
   };
 
   return <nav aria-label="Playlists" className="flex flex-col gap-3">
-    {children}
     {playlists.map((playlist) => {
       const open = !closedPlaylists.has(playlist.id);
       const queue = queueOrder(playlist.videos, progress);
       const left = queue.filter((item) => item.state !== "done").length;
       return <section key={playlist.id}>
-        <div className="group flex items-center gap-1">
-          <button onClick={() => setClosedPlaylists((set) => toggle(set, playlist.id))} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-1 rounded-lg py-1.5 text-left hover:bg-white/[0.05]">
-            <ChevronRight className={`size-4 shrink-0 text-white/40 transition-transform ${open ? "rotate-90" : ""}`} />
-            <span className="truncate text-sm font-semibold">{playlist.title}</span>
-            <span className="shrink-0 text-xs text-white/35">{left}/{playlist.videos.length}</span>
-          </button>
-          <button onClick={() => onRemovePlaylist(playlist)} aria-label={`Remove ${playlist.title}`} title="Remove playlist" className="grid size-7 shrink-0 place-items-center rounded-md text-white/30 opacity-0 hover:bg-red-500/15 hover:text-red-300 group-focus-within:opacity-100 group-hover:opacity-100"><Trash2 className="size-3.5" /></button>
-        </div>
+        <button onClick={() => setClosedPlaylists((set) => toggle(set, playlist.id))} aria-expanded={open} className="flex w-full min-w-0 items-center gap-1 rounded-lg py-1.5 text-left hover:bg-white/[0.05]">
+          <ChevronRight className={`size-4 shrink-0 text-white/40 transition-transform ${open ? "rotate-90" : ""}`} />
+          <span className="truncate text-sm font-semibold">{playlist.title}</span>
+          <span className="shrink-0 text-xs text-white/35">{left}/{playlist.videos.length}</span>
+        </button>
         {open && (queue.length
           ? <ul>{queue.map(({ video, state }) => videoRow(playlist, video, state))}</ul>
           : <p className="px-6 py-2 text-xs text-white/40">No videos in this playlist.</p>)}
