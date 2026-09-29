@@ -1,29 +1,25 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Bookmark, Check, ChevronRight, ExternalLink, Link2, LoaderCircle, Moon, Plus, RotateCcw, RotateCw, Share2, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { UserButton, useAuth, useSignIn, useUser } from "@clerk/react";
+import { Bookmark, Check, ChevronRight, ExternalLink, Moon, RotateCcw, RotateCw, Share2, ThumbsUp, X } from "lucide-react";
 import { QueueSidebar, type Selection } from "@/components/queue-sidebar";
 import { YouTubePlayer, type Clip, type PlayerHandle } from "@/components/youtube-player";
 import { formatDuration, type Video } from "@/lib/learning";
 import {
-  LIBRARY_KEY, SPEEDS, addBookmark, addPlaylist, addVideo, chapterAt, emptyProgress, labelBookmark, mergeVideoDetails, momentsFor,
-  readLibrary, removeBookmark, removePlaylist, removeVideo, savePosition, toggleChapterDone, toggleStatus, videoState, writeLibrary, writeProgress,
-  type LibraryPlaylist, type Moment, type Progress,
+  SPEEDS, addBookmark, chapterAt, emptyProgress, labelBookmark, mergeVideoDetails, momentsFor, readLibrary, removeBookmark,
+  savePosition, setMembership, syncPlaylists, toggleChapterDone, toggleStatus, videoState, writeLibrary, writeProgress,
+  type Moment, type Progress, type LibraryPlaylist,
 } from "@/lib/library";
-import { playlistIdFrom } from "@/lib/youtube-playlist";
+import { LIKED_PLAYLIST_ID, YOUTUBE_SCOPE, type AccountPlaylist } from "@/lib/youtube-account";
 
-type ImportResult = { playlist?: { id: string; title: string }; videos?: Video[]; error?: string };
 type VideoResult = { videos?: Video[]; error?: string };
 
-declare global { interface Document { modelContext?: { registerTool: (tool: { name: string; title: string; description: string; inputSchema: object; annotations: { readOnlyHint: boolean; untrustedContentHint: boolean }; execute: (input: unknown) => Promise<unknown> }, options?: { signal?: AbortSignal }) => void | Promise<void> } } }
-
-/** Seeded on a first visit so the layout has something in it. Details and chapters arrive through enrichment. */
-const SAMPLE: { id: string; title: string; videos: Video[] } = {
-  id: "PLZHQObOWTQDMsr9K-rj53DwVRMYO3t5Yr",
-  title: "Essence of calculus",
-  videos: [["WUvTyaaNkzM", "The essence of calculus"], ["9vKqVkMQHKk", "The paradox of the derivative"], ["kfF40MiS7zA", "Limits, L'Hôpital's rule, and epsilon delta definitions"]]
-    .map(([id, title]) => ({ id, title, channel: "3Blue1Brown", description: "", thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg` })),
-};
+/** A failed call to app/api/account. 403 means the Google sign-in lacks YouTube access. */
+class AccountError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+const lacksYouTube = (cause: unknown) => cause instanceof AccountError && cause.status === 403;
 
 const ENRICH_CHUNK = 10;
 const SAVE_EVERY_SECONDS = 5;
@@ -35,24 +31,49 @@ async function fetchVideoDetails(ids: string[]) {
   return result.videos ?? [];
 }
 
-async function fetchPlaylist(link: string) {
-  const response = await fetch(`/api/playlist?url=${encodeURIComponent(link)}&limit=100`);
-  const result = await response.json().catch(() => ({ error: "The server returned an unexpected response." })) as ImportResult;
-  if (!response.ok || !result.playlist || !result.videos?.length) throw new Error(result.error || "That playlist did not contain any public videos.");
-  return { playlist: result.playlist, videos: result.videos };
+/** The one way in. Google is the only sign-in method on the Clerk instance, so a first visit signs up here too. */
+function SignInScreen() {
+  const { signIn } = useSignIn();
+  const [error, setError] = useState("");
+  async function start() {
+    setError("");
+    const { error: failed } = await signIn.sso({ strategy: "oauth_google", redirectUrl: "/", redirectCallbackUrl: "/sso-callback" });
+    if (failed) setError(failed.message || "Google sign-in could not start. Try again.");
+  }
+  return <div className="grid min-h-screen place-items-center bg-[var(--ink)] px-6 text-center text-[var(--paper)]">
+    <div className="max-w-sm">
+      <span className="mx-auto grid size-10 place-items-center rounded-full bg-[var(--acid)] text-base font-bold text-[var(--ink)]">J</span>
+      <p className="mt-5 font-display text-3xl">Jev</p>
+      <p className="mt-2 text-sm leading-6 text-white/50">Your YouTube playlists and liked videos, one chapter at a time. Progress and bookmarks stay in this browser.</p>
+      <button onClick={start} className="mt-7 inline-flex h-11 items-center gap-2.5 rounded-full bg-white px-5 text-sm font-semibold text-black hover:bg-white/90">
+        <svg aria-hidden viewBox="0 0 48 48" className="size-4"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-3.1-.4-4.6H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.8c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.8c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
+    </div>
+  </div>;
 }
 
 const isTyping = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 
 export default function Home() {
+  const { isLoaded, isSignedIn } = useAuth();
+  if (!isLoaded) return <div className="min-h-screen bg-[var(--ink)]" />;
+  return isSignedIn ? <Library /> : <SignInScreen />;
+}
+
+function Library() {
+  const { getToken } = useAuth();
+  const { user } = useUser();
+  const [needsYouTube, setNeedsYouTube] = useState(false);
   const [playlists, setPlaylists] = useState<LibraryPlaylist[]>([]);
   const [progress, setProgress] = useState<Progress>(emptyProgress);
   const [loaded, setLoaded] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [chapterNow, setChapterNow] = useState<number | undefined>();
-  const [link, setLink] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(true);
+  const [like, setLike] = useState<{ videoId: string; liked: boolean } | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const player = useRef<PlayerHandle>(null);
   const enrichAttempted = useRef(new Set<string>());
@@ -63,7 +84,17 @@ export default function Home() {
   const state = videoState(videoProgress);
   const chapter = video?.chapters?.find((item) => item.start === selection?.chapterStart);
 
+  const liked = like && like.videoId === video?.id ? like.liked : undefined;
+
   const say = useCallback((text: string, error = false) => setMessage({ text, error }), []);
+
+  /** Same-origin calls to app/api/account, which read the viewer's Clerk session to act on their YouTube account. */
+  const account = useCallback(async <T,>(path: string, init: RequestInit = {}) => {
+    const response = await fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${await getToken()}` } });
+    const result = await response.json().catch(() => ({ error: "The server returned an unexpected response." })) as T & { error?: string };
+    if (!response.ok) throw new AccountError(result.error || "Your YouTube account could not be reached.", response.status);
+    return result;
+  }, [getToken]);
   useEffect(() => { if (!message) return; const timer = setTimeout(() => setMessage(null), message.error ? 6000 : 2500); return () => clearTimeout(timer); }, [message]);
 
   const open = useCallback((playlistId: string, videoId: string, moment?: Moment, autoplay = true) => {
@@ -79,15 +110,14 @@ export default function Home() {
     setProgress((current) => ({ ...current, last: { playlistId, videoId } }));
   }, [playlists, progress.videos]);
 
-  // Load the library, migrating the username-era store on the first visit after this change, and reopen the last video paused.
+  // Show the library saved in this browser at once, migrating the username-era store on the first visit after that change,
+  // and reopen the last video paused. The account sync below then refreshes it.
   useEffect(() => {
-    const firstVisit = window.localStorage.getItem(LIBRARY_KEY) === null;
     const saved = readLibrary();
-    const seeded = firstVisit && !saved.playlists.length ? addPlaylist([], SAMPLE.title, SAMPLE.videos, SAMPLE.id).playlists : saved.playlists;
     queueMicrotask(() => {
-      setPlaylists(seeded); setProgress(saved.progress); setLoaded(true);
+      setPlaylists(saved.playlists); setProgress(saved.progress); setLoaded(true);
       const last = saved.progress.last;
-      const target = seeded.find((item) => item.id === last?.playlistId)?.videos.find((item) => item.id === last?.videoId);
+      const target = saved.playlists.find((item) => item.id === last?.playlistId)?.videos.find((item) => item.id === last?.videoId);
       if (last && target) {
         const position = saved.progress.videos[target.id]?.position ?? 0;
         setSelection(last); setClip({ videoId: target.id, start: position, autoplay: false, nonce: 0 }); setChapterNow(chapterAt(target, position)?.start);
@@ -96,6 +126,60 @@ export default function Home() {
   }, []);
 
   useEffect(() => { if (loaded) writeLibrary(playlists); }, [playlists, loaded]);
+
+  // Refresh the library from the viewer's YouTube account: Liked videos and their own playlists.
+  // A playlist that fails to load keeps the copy already in the browser.
+  useEffect(() => {
+    if (!loaded) return;
+    let stopped = false;
+    (async () => {
+      try {
+        const { playlists: sources } = await account<{ playlists: AccountPlaylist[] }>("/api/account/playlists");
+        const results = await Promise.all(sources.map((source) => account<{ videos: Video[] }>(`/api/account/playlist?id=${encodeURIComponent(source.id)}`)
+          .then(({ videos }) => ({ source, videos }), () => ({ source, videos: null }))));
+        if (stopped) return;
+        setPlaylists((current) => syncPlaylists(current, results.flatMap(({ source, videos }) => {
+          const kept = videos ?? current.find((item) => item.sourcePlaylistId === source.id)?.videos ?? [];
+          return kept.length ? [{ ...source, videos: kept }] : [];
+        })));
+        if (results.some((result) => !result.videos)) say("Some playlists could not be refreshed.", true);
+      } catch (cause) {
+        if (stopped) return;
+        if (lacksYouTube(cause)) setNeedsYouTube(true);
+        else say(cause instanceof Error ? cause.message : "Your playlists could not be loaded.", true);
+      }
+      finally { if (!stopped) setSyncing(false); }
+    })();
+    return () => { stopped = true; };
+  }, [loaded, account, say]);
+
+  // Whether the open video is liked lives on YouTube, so it is asked for each time a video opens.
+  useEffect(() => {
+    if (!video) return;
+    let stopped = false;
+    account<{ liked: boolean }>(`/api/account/like?id=${video.id}`).then(({ liked: value }) => { if (!stopped) setLike({ videoId: video.id, liked: value }); }, (cause) => { if (!stopped && lacksYouTube(cause)) setNeedsYouTube(true); });
+    return () => { stopped = true; };
+  }, [video, account]);
+
+  // Someone who unticked YouTube on Google's consent screen is signed in but can't load anything. This asks Google again for that one scope.
+  async function allowYouTube() {
+    const google = user?.externalAccounts.find((item) => item.provider === "google");
+    if (!google) return;
+    try {
+      const updated = await google.reauthorize({ additionalScopes: [YOUTUBE_SCOPE], redirectUrl: window.location.href });
+      const next = updated.verification?.externalVerificationRedirectURL;
+      if (next) window.location.assign(next.toString());
+    } catch { say("Google did not open. Try again.", true); }
+  }
+
+  // Mirrors the like into the Liked playlist, except that a video open from Liked stays put until the next sync.
+  const toggleLike = useCallback(async () => {
+    if (!video || liked === undefined) return;
+    const mirror = (value: boolean) => { if (value || playlist?.sourcePlaylistId !== LIKED_PLAYLIST_ID) setPlaylists((current) => setMembership(current, LIKED_PLAYLIST_ID, video, value)); };
+    setLike({ videoId: video.id, liked: !liked }); mirror(!liked);
+    try { await account("/api/account/like", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: video.id, liked: !liked }) }); }
+    catch (cause) { setLike({ videoId: video.id, liked }); mirror(liked); if (lacksYouTube(cause)) setNeedsYouTube(true); say(cause instanceof Error ? cause.message : "The like did not reach YouTube.", true); }
+  }, [video, liked, playlist?.sourcePlaylistId, account, say]);
   useEffect(() => { if (loaded) writeProgress(progress); }, [progress, loaded]);
 
   // Videos imported from a playlist page arrive without a description, so chapters are read from each watch page in small batches.
@@ -180,61 +264,6 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [video, bookmark, skip, setRate]);
 
-  const importPlaylist = useCallback(async (input: string) => {
-    const { playlist: source, videos } = await fetchPlaylist(input);
-    const existed = playlists.some((item) => item.sourcePlaylistId === source.id);
-    const next = addPlaylist(playlists, source.title, videos, source.id);
-    setPlaylists(next.playlists);
-    say(`${existed ? "Refreshed" : "Added"} ${source.title} · ${videos.length} videos`);
-    return { title: source.title, videoCount: videos.length };
-  }, [playlists, say]);
-
-  async function submitLink(event: FormEvent) {
-    event.preventDefault();
-    const input = link.trim();
-    if (!input) return;
-    setBusy(true);
-    try {
-      if (playlistIdFrom(input)) await importPlaylist(input);
-      else {
-        const [found] = await fetchVideoDetails([input]);
-        if (!found) throw new Error("That video could not be read.");
-        // A single video joins the open playlist, or a "Saved videos" playlist when nothing is open.
-        const saved = playlist ?? playlists.find((item) => !item.sourcePlaylistId && item.title === "Saved videos");
-        const { playlists: next, playlist: target } = saved ? { playlists, playlist: saved } : addPlaylist(playlists, "Saved videos", []);
-        setPlaylists(addVideo(next, target.id, found));
-        say(`Added “${found.title}”`);
-      }
-      setLink("");
-    } catch (cause) { say(cause instanceof Error ? cause.message : "That link could not be added.", true); }
-    finally { setBusy(false); }
-  }
-
-  useEffect(() => {
-    if (!document.modelContext?.registerTool) return;
-    const lifecycle = new AbortController();
-    void Promise.resolve(document.modelContext.registerTool({
-      name: "add_jev_playlist", title: "Add a playlist to Jev", description: "Import a public YouTube playlist into the viewer's Jev sidebar.",
-      inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false },
-      annotations: { readOnlyHint: false, untrustedContentHint: true },
-      execute: async (input) => { const value = input as { url?: unknown }; if (typeof value.url !== "string") throw new Error("A playlist URL is required."); return importPlaylist(value.url); },
-    }, { signal: lifecycle.signal })).catch(() => undefined);
-    return () => lifecycle.abort();
-  }, [importPlaylist]);
-
-  function removeWholePlaylist(target: LibraryPlaylist) {
-    if (!window.confirm(`Remove “${target.title}” from Jev? Your progress on its videos is kept.`)) return;
-    setPlaylists(removePlaylist(playlists, target.id));
-    if (selection?.playlistId === target.id) { setSelection(null); setClip(null); }
-  }
-
-  function removeOpenVideo() {
-    if (!playlist || !video) return;
-    setPlaylists(removeVideo(playlists, playlist.id, video.id));
-    setSelection(null); setClip(null);
-    say(`Removed “${video.title}” from ${playlist.title}`);
-  }
-
   async function share() {
     if (!playlist) return;
     const params = new URLSearchParams({ videos: playlist.videos.map((item) => item.id).join(","), title: playlist.title });
@@ -246,14 +275,12 @@ export default function Home() {
 
   return <div className="flex min-h-screen flex-col bg-[var(--ink)] text-[var(--paper)] lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
     <aside className="order-2 border-white/10 px-3 pb-10 pt-4 lg:sticky lg:top-0 lg:order-1 lg:h-screen lg:overflow-y-auto lg:border-r">
-      <div className="mb-4 flex items-center gap-2 px-1"><span className="grid size-7 place-items-center rounded-full bg-[var(--acid)] text-xs font-bold text-[var(--ink)]">J</span><span className="font-display text-lg">Jev</span></div>
-      {loaded && <QueueSidebar playlists={playlists} progress={progress} selection={selection} onOpen={open} onToggleStatus={(id, status) => setProgress((current) => toggleStatus(current, id, status))} onRemovePlaylist={removeWholePlaylist}>
-        <form onSubmit={submitLink} className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] pl-2 focus-within:border-white/25">
-          <Link2 className="size-4 shrink-0 text-white/35" />
-          <input value={link} onChange={(event) => setLink(event.target.value)} aria-label="YouTube playlist or video link" placeholder="Paste a playlist or video link" className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-white/30" />
-          <button type="submit" disabled={busy} aria-label="Add link" className="grid size-9 shrink-0 place-items-center rounded-r-lg text-white/60 hover:bg-white/10 hover:text-white">{busy ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}</button>
-        </form>
-      </QueueSidebar>}
+      <div className="mb-4 flex items-center gap-2 px-1"><span className="grid size-7 place-items-center rounded-full bg-[var(--acid)] text-xs font-bold text-[var(--ink)]">J</span><span className="font-display text-lg">Jev</span><span className="ml-auto grid size-7 place-items-center"><UserButton /></span></div>
+      {needsYouTube && <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-sm">
+        <p className="text-white/70">Jev needs your permission to read your YouTube playlists and likes.</p>
+        <button onClick={allowYouTube} className="mt-2 h-8 rounded-lg bg-white px-3 font-semibold text-black hover:bg-white/90">Allow YouTube access</button>
+      </div>}
+      {loaded && <QueueSidebar playlists={playlists} progress={progress} selection={selection} onOpen={open} onToggleStatus={(id, status) => setProgress((current) => toggleStatus(current, id, status))} />}
     </aside>
 
     <main className="order-1 min-w-0 lg:order-2">
@@ -276,6 +303,7 @@ export default function Home() {
           <button onClick={bookmark} title="Bookmark this moment (B)" className="flex h-9 items-center gap-1.5 rounded-lg bg-[var(--acid)] px-3 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--acid-bright)]"><Bookmark className="size-4" /> Bookmark <kbd className="hidden rounded bg-black/15 px-1 text-[11px] sm:inline">B</kbd></button>
           {chapter && <button onClick={() => jump(player.current?.time() ?? chapter.start)} title="Play on past the end of this chapter" className="h-9 rounded-lg px-3 text-sm text-white/60 hover:bg-white/10 hover:text-white">Keep watching</button>}
           <div className="ml-auto flex items-center gap-1">
+            <button onClick={toggleLike} disabled={liked === undefined} aria-pressed={!!liked} title={liked ? "Take back your like on YouTube" : "Like on YouTube"} className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm disabled:opacity-40 ${liked ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"}`}><ThumbsUp className={`size-4 ${liked ? "fill-current" : ""}`} /> {liked ? "Liked" : "Like"}</button>
             <button onClick={() => setProgress((current) => toggleStatus(current, video.id, "snoozed"))} aria-pressed={state === "snoozed"} className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm ${state === "snoozed" ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"}`}><Moon className="size-4" /> {state === "snoozed" ? "Snoozed" : "Snooze"}</button>
             <button onClick={() => setProgress((current) => toggleStatus(current, video.id, "done"))} aria-pressed={state === "done"} className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm ${state === "done" ? "bg-[var(--acid)]/15 text-[var(--acid)]" : "text-white/60 hover:bg-white/10 hover:text-white"}`}><Check className="size-4" /> {state === "done" ? "Done" : "Mark done"}</button>
           </div>
@@ -301,13 +329,12 @@ export default function Home() {
 
           <div className="mt-6 flex flex-wrap gap-4 text-sm text-white/40">
             <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-white">Open on YouTube <ExternalLink className="size-3.5" /></a>
-            <button onClick={removeOpenVideo} className="flex items-center gap-1 hover:text-red-300"><Trash2 className="size-3.5" /> Remove from {playlist.title}</button>
           </div>
         </section>
       </div> : loaded && <div className="grid min-h-[50vh] place-items-center px-6 py-16 text-center lg:min-h-screen">
         <div className="max-w-sm">
-          <p className="font-display text-2xl">{playlists.length ? "Pick a video" : "Start with a playlist"}</p>
-          <p className="mt-2 text-sm leading-6 text-white/45">{playlists.length ? "Choose a video or one of its chapters from the list." : "Paste a YouTube playlist link into the box in the list. Jev copies it here, reads each video's chapters, and remembers where you stopped."}</p>
+          <p className="font-display text-2xl">{playlists.length ? "Pick a video" : needsYouTube ? "Allow YouTube access" : syncing ? "Loading your playlists" : "Nothing to watch yet"}</p>
+          <p className="mt-2 text-sm leading-6 text-white/45">{playlists.length ? "Choose a video or one of its chapters from the list." : needsYouTube ? "Use the button in the list so Jev can read your playlists and likes." : syncing ? "Reading Liked videos and your playlists from YouTube." : "Like a video or save one to a playlist on YouTube and it shows up here on your next visit."}</p>
         </div>
       </div>}
     </main>

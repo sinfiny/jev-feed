@@ -29,6 +29,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+        env:
+          # Public by design; Vinext inlines NEXT_PUBLIC_* into the client bundle at build time.
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
       - name: Upload Worker bundle
         uses: actions/upload-artifact@v4
         with:

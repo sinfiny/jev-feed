@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Video } from "@/lib/learning";
 import {
-  addBookmark, addPlaylist, emptyProgress, migrateLegacy, momentsFor, parseLibrary, parseProgress, queueOrder, savePosition, toggleChapterDone, toggleStatus, videoState,
+  addBookmark, emptyProgress, migrateLegacy, momentsFor, parseLibrary, parseProgress, queueOrder, savePosition, setMembership, syncPlaylists, toggleChapterDone, toggleStatus, videoState,
 } from "@/lib/library";
 
 const video = (id: string, extra: Partial<Video> = {}): Video => ({ id, title: `Video ${id}`, channel: "c", description: "d", thumbnail: "", ...extra });
@@ -36,14 +36,29 @@ describe("migrating the username-era store", () => {
   });
 });
 
-describe("playlists", () => {
-  it("refreshes a copy of the same YouTube playlist instead of adding a second one", () => {
-    const first = addPlaylist([], "Old title", [video("a", { chapters: [{ start: 0, title: "Intro" }, { start: 60, title: "Next" }] })], "PL1");
-    const second = addPlaylist(first.playlists, "New title", [video("b"), video("a", { chapters: undefined })], "PL1");
-    expect(second.playlists).toHaveLength(1);
-    expect(second.playlist).toMatchObject({ id: first.playlist.id, title: "New title" });
-    expect(second.playlist.videos.map((item) => item.id)).toEqual(["b", "a"]);
-    expect(second.playlist.videos[1].chapters).toHaveLength(2);
+describe("syncing from the YouTube account", () => {
+  it("follows the account's playlists, keeping local ids and chapters already read", () => {
+    const chapters = [{ start: 0, title: "Intro" }, { start: 60, title: "Next" }];
+    const current = [
+      { id: "p_1", title: "Old title", sourcePlaylistId: "PL1", videos: [video("a", { chapters })] },
+      { id: "p_2", title: "Pasted before sign-in", videos: [video("z")] },
+    ];
+    const synced = syncPlaylists(current, [
+      { id: "LL", title: "Liked videos", videos: [video("c")] },
+      { id: "PL1", title: "New title", videos: [video("b"), video("a", { chapters: undefined }), video("b")] },
+    ]);
+    expect(synced.map((playlist) => playlist.title)).toEqual(["Liked videos", "New title"]);
+    expect(synced[1]).toMatchObject({ id: "p_1", sourcePlaylistId: "PL1" });
+    expect(synced[1].videos.map((item) => item.id)).toEqual(["b", "a"]);
+    expect(synced[1].videos[1].chapters).toEqual(chapters);
+    expect(synced[0].id).not.toBe("LL");
+  });
+
+  it("puts a liked video at the top of Liked and takes it out again", () => {
+    const playlists = [{ id: "p_1", title: "Liked videos", sourcePlaylistId: "LL", videos: [video("a"), video("b")] }];
+    expect(setMembership(playlists, "LL", video("b"), true)[0].videos.map((item) => item.id)).toEqual(["b", "a"]);
+    expect(setMembership(playlists, "LL", video("a"), false)[0].videos.map((item) => item.id)).toEqual(["b"]);
+    expect(setMembership(playlists, "PL9", video("c"), true)).toEqual(playlists);
   });
 });
 
