@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chaptersFrom,
   durationToSeconds,
   isVideoOnlyYouTubeUrl,
   parsePlaylistFeed,
@@ -215,11 +216,11 @@ describe("parseWatchPage", () => {
   };
   const html = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};var meta = {};</script></html>`;
 
-  it("extracts rich metadata and chapter titles", () => {
+  it("extracts rich metadata and timed chapters", () => {
     expect(parseWatchPage(html, "fffffffffff")).toMatchObject({
       id: "fffffffffff", title: "Limits explained", channel: "Watch Channel", durationSeconds: 1106, views: 2_598_365,
       category: "Education", published: "2017-05-05T08:00:00-07:00", keywords: ["calculus", "limits"],
-      chapters: ["Intro", "The idea of a limit", "Epsilon and delta"],
+      chapters: [{ start: 0, title: "Intro" }, { start: 135, title: "The idea of a limit" }, { start: 460, title: "Epsilon and delta" }],
     });
     expect(parseWatchPage(html, "fffffffffff")?.description).toContain("Full description.");
   });
@@ -252,9 +253,9 @@ describe("datacenter-friendly sources", () => {
     const response = { contents: { results: [
       { videoPrimaryInfoRenderer: { title: { runs: [{ text: "Next title" }] }, viewCount: { videoViewCountRenderer: { viewCount: { simpleText: "1,234 views" } } }, dateText: { simpleText: "Apr 28, 2017" } } },
       { videoSecondaryInfoRenderer: { owner: { videoOwnerRenderer: { title: { runs: [{ text: "Owner" }] } } }, attributedDescription: { content: "Long description" } } },
-      { panel: { items: [{ macroMarkersListItemRenderer: { title: { simpleText: "Intro" } } }, { macroMarkersListItemRenderer: { title: { simpleText: "Proof" } } }] } },
+      { panel: { items: [{ macroMarkersListItemRenderer: { title: { simpleText: "Intro" }, timeDescription: { simpleText: "0:00" } } }, { macroMarkersListItemRenderer: { title: { simpleText: "Proof" }, timeDescription: { simpleText: "1:02:03" } } }] } },
     ] } };
-    expect(videoFromNextResponse(response, "iiiiiiiiiii")).toMatchObject({ title: "Next title", channel: "Owner", description: "Long description", views: 1234, published: "Apr 28, 2017", chapters: ["Intro", "Proof"] });
+    expect(videoFromNextResponse(response, "iiiiiiiiiii")).toMatchObject({ title: "Next title", channel: "Owner", description: "Long description", views: 1234, published: "Apr 28, 2017", chapters: [{ start: 0, title: "Intro" }, { start: 3723, title: "Proof" }] });
     expect(videoFromNextResponse({}, "iiiiiiiiiii")).toBeNull();
   });
 
@@ -270,5 +271,18 @@ describe("datacenter-friendly sources", () => {
     const fromSearch = { id: "k", title: "Search", channel: "", description: "Snippet", thumbnail: "t", durationSeconds: 60 };
     expect(mergeVideos("kkkkkkkkkkk", fromNext, fromSearch)).toEqual({ id: "kkkkkkkkkkk", title: "Next", channel: "Owner", description: "Long", thumbnail: "t", durationSeconds: 60 });
     expect(mergeVideos("kkkkkkkkkkk", null, null)).toBeNull();
+  });
+});
+
+describe("chaptersFrom", () => {
+  it("reads timed chapters and ignores timestamps that go backwards", () => {
+    expect(chaptersFrom("Notes\n0:00 Intro\n1:02:03 - Late\n5:00 Backwards\n1:10:00 | End")).toEqual([
+      { start: 0, title: "Intro" }, { start: 3723, title: "Late" }, { start: 4200, title: "End" },
+    ]);
+  });
+
+  it("needs at least two chapters", () => {
+    expect(chaptersFrom("See 2:15 for the good part")).toEqual([]);
+    expect(chaptersFrom("0:00 Only one")).toEqual([]);
   });
 });

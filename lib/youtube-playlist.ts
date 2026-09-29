@@ -1,4 +1,4 @@
-import type { Video } from "@/lib/learning";
+import type { Chapter, Video } from "@/lib/learning";
 
 export type PlaylistFeed = {
   playlist: { id: string; title: string; channel: string };
@@ -94,13 +94,16 @@ export function parsePlaylistFeed(xml: string, playlistId: string): PlaylistFeed
   const videos = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((match) => {
     const entry = match[1];
     const id = tag(entry, "yt:videoId");
+    const description = tag(entry, "media:description");
+    const chapters = chaptersFrom(description);
     return {
       id,
       title: tag(entry, "title"),
       channel: tag(entry, "name") || "YouTube",
-      description: tag(entry, "media:description").slice(0, 1200),
+      description: description.slice(0, 1200),
       thumbnail: unescapeXml(entry.match(/<media:thumbnail[^>]+url="([^"]+)"/i)?.[1] ?? ""),
       published: tag(entry, "published"),
+      ...(chapters.length ? { chapters } : {}),
     };
   }).filter((video) => video.id && video.title && !seen.has(video.id) && !!seen.add(video.id));
 
@@ -160,6 +163,7 @@ export function parsePlaylistPage(html: string, playlistId: string, limit: numbe
       published: known?.published,
       durationSeconds: Number.isFinite(lengthSeconds) && lengthSeconds > 0 ? lengthSeconds : known?.durationSeconds,
       views: viewsText ? viewsToNumber(viewsText) : known?.views,
+      chapters: known?.chapters,
     } satisfies Video];
   });
 
@@ -184,6 +188,7 @@ export function parsePlaylistPage(html: string, playlistId: string, limit: numbe
       published: known?.published,
       durationSeconds: badge ? durationToSeconds(badge) : known?.durationSeconds,
       views: viewsText ? viewsToNumber(viewsText) : known?.views,
+      chapters: known?.chapters,
     } satisfies Video];
   });
 
@@ -203,7 +208,7 @@ type PlayerResponse = { videoDetails?: Record<string, unknown>; microformat?: { 
  * Builds a Video from YouTube's player response, which carries the full description, exact length,
  * YouTube's category, view count, publish date, and uploader keywords. The same JSON is embedded in
  * watch pages and returned by the innertube player endpoint; metadata is present even when playback
- * is reported as unplayable. Chapter titles come from the description's timestamp lines.
+ * is reported as unplayable. Chapters come from the description's timestamp lines.
  */
 export function videoFromPlayerResponse(value: unknown, videoId: string): Video | null {
   if (!value || typeof value !== "object") return null;
@@ -228,7 +233,7 @@ export function videoFromPlayerResponse(value: unknown, videoId: string): Video 
     durationSeconds: Number.isFinite(lengthSeconds) && lengthSeconds > 0 ? lengthSeconds : undefined,
     views: Number.isFinite(views) ? views : undefined,
     category: typeof micro.category === "string" ? micro.category : undefined,
-    chapters: chapters.length >= 2 ? chapters.slice(0, 40) : undefined,
+    chapters: chapters.length ? chapters : undefined,
     keywords: Array.isArray(details.keywords) ? details.keywords.filter((word): word is string => typeof word === "string").slice(0, 30) : undefined,
   };
 }
@@ -272,8 +277,19 @@ function collectKey(value: unknown, key: string, out: unknown[] = [], depth = 0)
   return out;
 }
 
-const chaptersFrom = (description: string) =>
-  [...description.matchAll(/^\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[-–—|:]?\s*(.+)$/gm)].map((line) => line[1].trim()).filter(Boolean);
+/** Keeps chapters that start strictly later than the one before, the way YouTube itself requires, capped at 40. */
+function inOrder(candidates: Array<{ start?: number; title: string }>): Chapter[] {
+  const chapters: Chapter[] = [];
+  for (const { start, title } of candidates) {
+    if (start === undefined || !title || (chapters.length && start <= chapters.at(-1)!.start)) continue;
+    chapters.push({ start, title });
+  }
+  return chapters.length >= 2 ? chapters.slice(0, 40) : [];
+}
+
+/** Chapters from description lines such as "0:00 Intro" or "1:02:03 - Proof". */
+export const chaptersFrom = (description: string) =>
+  inOrder([...description.matchAll(/^\s*((?:\d{1,2}:)?\d{1,2}:\d{2})\s*[-–—|:]?\s*(.+)$/gm)].map((line) => ({ start: durationToSeconds(line[1]), title: line[2].trim() })));
 
 /**
  * Builds a Video from the innertube `next` response, the JSON behind the watch page's info panel.
@@ -289,8 +305,12 @@ export function videoFromNextResponse(value: unknown, videoId: string): Video | 
   const attributed = findKey(secondary, "attributedDescription") as { content?: unknown } | undefined;
   const description = typeof attributed?.content === "string" ? attributed.content : textFrom(secondary?.description);
   const viewsText = textFrom((findKey(primary?.viewCount, "videoViewCountRenderer") as Record<string, unknown> | undefined)?.viewCount);
-  const markers = collectKey(value, "macroMarkersListItemRenderer").map((marker) => textFrom((marker as Record<string, unknown>).title)).filter(Boolean);
-  const chapters = markers.length >= 2 ? [...new Set(markers)] : chaptersFrom(description);
+  // Chapter markers carry their own start time; YouTube also lists auto-generated chapters here.
+  const markers = inOrder(collectKey(value, "macroMarkersListItemRenderer").map((marker) => {
+    const item = marker as Record<string, unknown>;
+    return { start: durationToSeconds(textFrom(item.timeDescription) || "x"), title: textFrom(item.title) };
+  }));
+  const chapters = markers.length ? markers : chaptersFrom(description);
   return {
     id: videoId,
     title,
@@ -299,7 +319,7 @@ export function videoFromNextResponse(value: unknown, videoId: string): Video | 
     thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
     published: textFrom(primary?.dateText) || undefined,
     views: viewsText ? viewsToNumber(viewsText) : undefined,
-    chapters: chapters.length >= 2 ? chapters.slice(0, 40) : undefined,
+    chapters: chapters.length ? chapters : undefined,
   };
 }
 
