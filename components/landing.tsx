@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSignIn } from "@clerk/react";
 import { Logo, Mascot } from "@/components/brand";
+import { oauthErrorMessage } from "@/lib/auth";
 
 const FEATURES = [
   { emoji: "🚪", title: "Chapters are doors", text: "Every video opens into its chapters. Start anywhere, finish one piece at a time.", tone: "var(--lime)", tilt: "-rotate-2" },
@@ -17,8 +18,13 @@ export function Landing() {
   const [starting, setStarting] = useState(false);
   async function start() {
     setError(""); setStarting(true);
-    const { error: failed } = await signIn.sso({ strategy: "oauth_google", redirectUrl: "/", redirectCallbackUrl: "/sso-callback" });
-    if (failed) { setError(failed.message || "Google sign-in could not start. Try again."); setStarting(false); }
+    try {
+      const { error } = await signIn.sso({ strategy: "oauth_google", redirectUrl: "/", redirectCallbackUrl: "/sso-callback" });
+      if (error) throw error;
+    } catch (cause) {
+      setError(oauthErrorMessage(cause, "Google sign-in could not start. Try again."));
+      setStarting(false);
+    }
   }
   return <main className="dotted min-h-screen overflow-hidden px-5 pb-16 pt-6 text-[var(--paper)]">
     <div className="mx-auto max-w-5xl">
