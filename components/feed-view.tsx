@@ -542,7 +542,7 @@ function Footer() {
         <span className="block font-sans text-sm font-medium text-black/65">Line up YouTube videos in the order that helps, then share the link.</span>
       </span>
     </Link>
-    <p className="mt-4 text-center text-xs text-white/40">No account needed to watch. What you finish stays in this browser.</p>
+    <p className="mt-4 text-center text-xs text-white/40">No account needed to watch. Your place is saved in this browser.</p>
     <p className="mt-2 text-center text-xs text-white/40"><Link href="/privacy" className="underline underline-offset-2">Privacy</Link> · <Link href="/terms" className="underline underline-offset-2">Terms</Link> · <a href="https://www.youtube.com/t/terms" className="underline underline-offset-2">YouTube terms</a></p>
   </footer>;
 }

@@ -1,5 +1,6 @@
+import { waitUntil } from "cloudflare:workers";
 import { viewerId } from "../../account/google";
-import { FeedError, feedFailure, feeds, ownerOf, readFeedBody, saveFeed } from "../store";
+import { FeedError, feedFailure, feeds, needsRefresh, ownerOf, readFeedBody, refreshFeed, saveFeed, type FeedMeta } from "../store";
 
 export const runtime = "edge";
 
@@ -11,8 +12,9 @@ export async function GET(_request: Request, { params }: Context) {
   const { id } = await params;
   try {
     if (!validId(id)) throw new FeedError("That feed link is not valid.", 400);
-    const value = await feeds().get(id);
+    const { value, metadata } = await feeds().getWithMetadata<FeedMeta>(id);
     if (value === null) throw new FeedError("This feed was taken down, or the link is mistyped.", 404);
+    if (metadata && needsRefresh(metadata, Date.now())) waitUntil(refreshFeed(id, value, metadata).catch(() => undefined));
     return new Response(value, { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=30, s-maxage=30" } });
   } catch (error) { return feedFailure(error); }
 }

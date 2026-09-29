@@ -1,4 +1,5 @@
 import { createClerkClient } from "@clerk/backend";
+import { channelIdsFrom, channelsFrom, videosFrom } from "@/lib/youtube-account";
 
 /**
  * Calls the YouTube Data API as the signed-in viewer. The browser sends its Clerk session token;
@@ -20,11 +21,22 @@ export async function viewerId(request: Request) {
   return userId;
 }
 
-export async function googleToken(request: Request) {
-  const userId = await viewerId(request);
+/** A Google access token for a Clerk user. Clerk renews it as needed, so this works without that user present. */
+export async function googleTokenFor(userId: string) {
   const { data } = await clerk().users.getUserOauthAccessToken(userId, "google");
   if (!data[0]?.token) throw new AccountError(RECONNECT, 403);
   return data[0].token;
+}
+
+export const googleToken = async (request: Request) => googleTokenFor(await viewerId(request));
+
+/** videos.list for up to 50 ids, with each channel's subscriber count and avatar. Two quota units. */
+export async function videoDetails(token: string, ids: string[]) {
+  const response = await youtube(token, "videos", { part: "snippet,contentDetails,statistics", id: ids.join(","), maxResults: "50" });
+  const channelIds = channelIdsFrom(response);
+  const channels = channelIds.length ? channelsFrom(await youtube(token, "channels", { part: "statistics,snippet", id: channelIds.join(","), maxResults: "50" }).catch(() => null)) : undefined;
+  const fetchedAt = Date.now();
+  return videosFrom(response, channels).map((video) => ({ ...video, fetchedAt }));
 }
 
 export async function youtube(token: string, path: string, params: Record<string, string>, method = "GET") {

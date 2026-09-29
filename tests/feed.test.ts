@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Video } from "@/lib/learning";
 import { PRESETS } from "@/lib/lens";
-import { addVideos, createDraft, feedOrder, fingerprint, moveItem, parseDrafts, parsePublishedFeed, toPublished, toggleHidden, togglePinned, setNote } from "@/lib/feed";
+import { addVideos, createDraft, feedOrder, fingerprint, moveItem, oldestFetch, parseDrafts, parsePublishedFeed, staleIds, toPublished, toggleHidden, togglePinned, setNote, withFreshVideos, withLibraryDetails } from "@/lib/feed";
 
 const video = (id: string, title = `Video ${id}`, extra: Partial<Video> = {}): Video => ({ id: id.padEnd(11, "x"), title, channel: "c", description: "d".repeat(1000), thumbnail: "", ...extra });
 const ids = (list: Array<{ video: Video }>) => list.map((item) => item.video.id[0]);
@@ -65,5 +65,51 @@ describe("designing a feed", () => {
     const draft = createDraft("Graphs", [video("a")]);
     expect(parseDrafts([draft, { id: 3 }, null])).toEqual([{ ...draft, items: [{ video: draft.items[0].video, note: undefined, pinned: undefined, hidden: undefined }] }]);
     expect(parseDrafts("nope")).toEqual([]);
+  });
+});
+
+describe("keeping YouTube details under 30 days old", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.UTC(2027, 0, 31);
+  const old = video("o", "Old title", { fetchedAt: now - 40 * day, chapters: [{ start: 0, title: "Intro" }], category: "Education" });
+  const recent = video("r", "Recent", { fetchedAt: now - 5 * day });
+  const gone = video("g", "Made private", { fetchedAt: now - 40 * day });
+  const feed = () => toPublished(setNote(togglePinned(createDraft("x", [old, recent, gone]), old.id), old.id, "Start here"), {});
+
+  it("asks again only about videos read more than 29 days ago", () => {
+    expect(staleIds(feed(), now)).toEqual([old.id, gone.id]);
+    expect(oldestFetch(feed())).toBe(now - 40 * day);
+  });
+
+  it("treats a video with no read date as read when published feeds shipped", () => {
+    const undated = toPublished(createDraft("x", [video("u")]), {});
+    expect(staleIds(undated, Date.UTC(2026, 9, 20))).toEqual([]);
+    expect(staleIds(undated, Date.UTC(2026, 10, 5))).toEqual([video("u").id]);
+  });
+
+  it("takes fresh details, keeps the note, pin and what only the older copy knew, and drops a video YouTube no longer returns", () => {
+    const fresh = video("o", "New title", { fetchedAt: now, views: 9 });
+    const next = withFreshVideos(feed(), [old.id, gone.id], [fresh]);
+    expect(ids(next.items)).toEqual(["o", "r"]);
+    expect(next.items[0]).toMatchObject({ note: "Start here", pinned: true, video: { title: "New title", views: 9, fetchedAt: now, category: "Education", chapters: [{ start: 0, title: "Intro" }] } });
+    expect(next.items[0].video.description).toHaveLength(400);
+    expect(staleIds(next, now)).toEqual([]);
+  });
+
+  it("keeps the read date through storing and reading a published feed", () => {
+    expect(parsePublishedFeed(JSON.parse(JSON.stringify(feed())))?.items[1].video.fetchedAt).toBe(now - 5 * day);
+  });
+
+  it("does not call a link behind its draft because details were read again", () => {
+    const published = feed();
+    expect(fingerprint(withFreshVideos(published, [recent.id], [{ ...recent, fetchedAt: now }]))).toBe(fingerprint(published));
+  });
+
+  it("gives drafts the library's copy when it was read more recently, and leaves them alone otherwise", () => {
+    const drafts = [createDraft("x", [old, recent])];
+    expect(withLibraryDetails(drafts, new Map([[recent.id, recent]]))).toBe(drafts);
+    const next = withLibraryDetails(drafts, new Map([[old.id, { ...old, title: "New title", fetchedAt: now }]]));
+    expect(next[0].items[0].video).toMatchObject({ title: "New title", fetchedAt: now });
+    expect(next[0].updatedAt).toBe(drafts[0].updatedAt);
   });
 });

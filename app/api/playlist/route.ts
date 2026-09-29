@@ -93,7 +93,8 @@ export async function GET(request: Request) {
     }
 
     if (!result?.videos.length) return Response.json({ error: "No public videos were found in that playlist." }, { status: 404 });
-    return Response.json({ ...result, requestedLimit: limit, returnedCount: result.videos.length, complete }, {
+    const fetchedAt = Date.now();
+    return Response.json({ ...result, videos: result.videos.map((video) => ({ ...video, fetchedAt })), requestedLimit: limit, returnedCount: result.videos.length, complete }, {
       headers: { "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=86400" },
     });
   } catch (error) {

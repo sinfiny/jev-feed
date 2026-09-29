@@ -1,4 +1,5 @@
-import type { Video } from "@/lib/learning";
+import { fetchedAt, isStale, type Video } from "@/lib/learning";
+import { mergeVideos } from "@/lib/youtube-playlist";
 import { parseJudgments, parseLens, questionKey, rank, type Judgments, type Lens, type Reason } from "@/lib/lens";
 
 /**
@@ -105,9 +106,41 @@ export function toPublished(draft: FeedDraft, judgments: Judgments, author?: str
   return { v: 1, title: draft.title.trim() || "Untitled feed", blurb: draft.blurb.trim(), emoji: draft.emoji, color: draft.color, ...author ? { author } : {}, lens: draft.lens, items, judgments: kept, publishedAt: Date.now() };
 }
 
+/** The videos in a published feed whose details are due to be read from YouTube again. */
+export const staleIds = (feed: PublishedFeed, now: number) => feed.items.filter((item) => isStale(item.video, now)).map((item) => item.video.id);
+
+/** When the oldest details in a feed were read. Kept beside the feed so a read knows it is due without opening it. */
+export const oldestFetch = (feed: PublishedFeed) => Math.min(...feed.items.map((item) => fetchedAt(item.video)));
+
+/**
+ * A published feed after YouTube was asked about `asked` and answered with `fresh`. Fresh details replace the
+ * stored ones; what only the older copy knew (auto chapters, category) is kept. A video YouTube no longer
+ * returns is private or removed, so it leaves the feed. The organizer's draft still holds it.
+ */
+export function withFreshVideos(feed: PublishedFeed, asked: string[], fresh: Video[]): PublishedFeed {
+  const byId = new Map(fresh.map((video) => [video.id, video]));
+  const gone = new Set(asked.filter((id) => !byId.has(id)));
+  return { ...feed, items: feed.items.filter((item) => !gone.has(item.video.id)).map((item) => byId.has(item.video.id) ? { ...item, video: snapshotVideo(mergeVideos(item.video.id, byId.get(item.video.id)!, item.video)!) } : item) };
+}
+
+/** Drafts take the library's copy of a video when it was read more recently, so a draft never holds older details than the library. */
+export function withLibraryDetails(drafts: FeedDraft[], library: Map<string, Video>) {
+  let changed = false;
+  const next = drafts.map((draft) => {
+    const items = draft.items.map((item) => {
+      const copy = library.get(item.video.id);
+      return copy && fetchedAt(copy) > fetchedAt(item.video) ? { ...item, video: mergeVideos(copy.id, copy, item.video)! } : item;
+    });
+    if (items.every((item, index) => item === draft.items[index])) return draft;
+    changed = true;
+    return { ...draft, items };
+  });
+  return changed ? next : drafts;
+}
+
 /** Changes whenever what viewers would see changes, to tell the organizer their link is behind the draft. */
 export const fingerprint = (feed: PublishedFeed) => {
-  const text = JSON.stringify({ ...feed, publishedAt: 0, author: undefined });
+  const text = JSON.stringify({ ...feed, publishedAt: 0, author: undefined }, (key, value: unknown) => key === "fetchedAt" ? undefined : value);
   let hash = 0;
   for (let index = 0; index < text.length; index += 1) hash = (hash * 31 + text.charCodeAt(index)) | 0;
   return hash.toString(36);
@@ -135,6 +168,7 @@ function parseVideo(value: unknown): Video | null {
     published: string(item.published, 40) || undefined, durationSeconds: number("durationSeconds"), views: number("views"), likes: number("likes"),
     subscribers: number("subscribers"), channelAvatar: /^https:\/\/[\w.-]*(ggpht|googleusercontent|ytimg)\.com\//.test(avatar) ? avatar : undefined,
     category: string(item.category, 40) || undefined, chapters: chapters.length ? chapters : undefined, keywords: keywords.length ? keywords : undefined,
+    fetchedAt: number("fetchedAt"),
   };
 }
 
