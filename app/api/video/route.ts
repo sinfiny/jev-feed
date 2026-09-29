@@ -41,16 +41,18 @@ const attempt = (run: () => Promise<Attempt>) => run().then((result) => result.v
 
 /**
  * Richest source first. The `player` endpoint has everything (length, category, keywords) but YouTube
- * turns it away for datacenter addresses with LOGIN_REQUIRED. `next` (description, views, date, chapters)
- * and a search for the id (length, snippet) are served to Workers and are merged. oEmbed always answers
- * with title, author, and thumbnail. `?debug=1` shows what each source returned from where the Worker runs.
+ * turns it away for datacenter addresses with LOGIN_REQUIRED. `next` (description, views, likes, owner,
+ * date, chapters) and a search for the id (length, snippet) are served to Workers and are merged. oEmbed
+ * always answers with title, author, and thumbnail. `?debug=1` shows what each source returned from where the Worker runs.
+ * `complete` marks a video whose full description was read (player or next), so the client stops enriching it;
+ * a search snippet or oEmbed alone leaves it unset so a later request can try again.
  */
 async function fetchVideo(id: string): Promise<Video | null> {
-  const fromPlayer = await attempt(player(id));
-  if (fromPlayer) return fromPlayer;
-  const [fromNext, fromSearch] = await Promise.all([attempt(next(id)), attempt(search(id))]);
-  const merged = mergeVideos(id, fromNext, fromSearch);
-  if (merged) return merged;
+  // `player` has no likes, subscribers or channel avatar, so `next` is always asked alongside it.
+  const [fromPlayer, fromNext] = await Promise.all([attempt(player(id)), attempt(next(id))]);
+  if (fromPlayer) return { ...(mergeVideos(id, fromPlayer, fromNext) ?? fromPlayer), complete: true };
+  const merged = mergeVideos(id, fromNext, await attempt(search(id)));
+  if (merged) return fromNext ? { ...merged, complete: true } : merged;
   return attempt(oEmbed(id));
 }
 

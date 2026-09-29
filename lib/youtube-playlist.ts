@@ -53,7 +53,7 @@ export function durationToSeconds(text: string) {
   return parts.reduce((total, part) => total * 60 + part, 0);
 }
 
-/** "11M views", "4,465,289 views", "No views" to a number. */
+/** "11M views", "4,465,289 views", "No views", "8.66M subscribers" to a number. */
 export function viewsToNumber(text: string) {
   const match = text.replace(/,/g, "").match(/([\d.]+)\s*([KMB])?/i);
   if (!match) return text.toLowerCase().startsWith("no") ? 0 : undefined;
@@ -292,9 +292,30 @@ export const chaptersFrom = (description: string) =>
   inOrder([...description.matchAll(/^\s*((?:\d{1,2}:)?\d{1,2}:\d{2})\s*[-–—|:]?\s*(.+)$/gm)].map((line) => ({ start: durationToSeconds(line[1]), title: line[2].trim() })));
 
 /**
+ * Like count from the `next` response's like button. The button's accessibility text has the exact count
+ * ("like this video along with 563,461 other people"); its title only the rounded one ("563K"). When the
+ * creator hides likes the title is just "Like" and this returns undefined.
+ */
+function likesFrom(primary: unknown): number | undefined {
+  const button = JSON.stringify(findKey(primary, "likeButtonViewModel") ?? findKey(primary, "segmentedLikeDislikeButtonRenderer") ?? {});
+  const exact = button.match(/along with ([\d,]+) other/)?.[1] ?? button.match(/"label":"([\d,]+) likes?"/)?.[1];
+  if (exact) return Number(exact.replace(/,/g, ""));
+  const rounded = button.match(/"title":"([\d.,]+\s*[KMB]?)"/i)?.[1];
+  return rounded ? viewsToNumber(rounded) : undefined;
+}
+
+const absoluteUrl = (url: string) => url.startsWith("//") ? `https:${url}` : url;
+
+const largestThumbnail = (value: unknown) => {
+  const thumbnails = findKey(value, "thumbnails");
+  const url = Array.isArray(thumbnails) ? (thumbnails.at(-1) as { url?: unknown } | undefined)?.url : undefined;
+  return typeof url === "string" && url ? absoluteUrl(url) : undefined;
+};
+
+/**
  * Builds a Video from the innertube `next` response, the JSON behind the watch page's info panel.
- * It carries title, full description, owner, view count, publish date, and chapter markers, but not the
- * length. YouTube serves it to datacenter addresses that the `player` endpoint turns away.
+ * It carries title, full description, owner (name, avatar, subscribers), views, likes, publish date, and
+ * chapter markers, but not the length. YouTube serves it to datacenter addresses that the `player` endpoint turns away.
  */
 export function videoFromNextResponse(value: unknown, videoId: string): Video | null {
   const primary = findKey(value, "videoPrimaryInfoRenderer") as Record<string, unknown> | undefined;
@@ -311,21 +332,25 @@ export function videoFromNextResponse(value: unknown, videoId: string): Video | 
     return { start: durationToSeconds(textFrom(item.timeDescription) || "x"), title: textFrom(item.title) };
   }));
   const chapters = markers.length ? markers : chaptersFrom(description);
+  const subscribersText = textFrom(owner?.subscriberCountText);
   return {
     id: videoId,
     title,
     channel: textFrom(owner?.title) || "YouTube",
+    channelAvatar: largestThumbnail(owner?.thumbnail),
     description: description.slice(0, 2000),
     thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
     published: textFrom(primary?.dateText) || undefined,
     views: viewsText ? viewsToNumber(viewsText) : undefined,
+    likes: likesFrom(primary),
+    subscribers: subscribersText ? viewsToNumber(subscribersText) : undefined,
     chapters: chapters.length ? chapters : undefined,
   };
 }
 
 /**
  * Finds one video's `videoRenderer` on a search results page for its own id. This is the cheapest
- * datacenter-friendly source of the video's length; it also has a description snippet and view count.
+ * datacenter-friendly source of the video's length; it also has a description snippet, view count and channel avatar.
  */
 export function videoFromSearchPage(html: string, videoId: string): Video | null {
   const renderer = rendererObjects(html, '"videoRenderer":', 40).find((item) => item.videoId === videoId);
@@ -338,6 +363,7 @@ export function videoFromSearchPage(html: string, videoId: string): Video | null
     id: videoId,
     title,
     channel: textFrom(renderer.ownerText) || textFrom(renderer.shortBylineText) || "YouTube",
+    channelAvatar: largestThumbnail(renderer.channelThumbnailSupportedRenderers),
     description: textFrom(snippet),
     thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
     durationSeconds: durationToSeconds(textFrom(renderer.lengthText) || "x"),
