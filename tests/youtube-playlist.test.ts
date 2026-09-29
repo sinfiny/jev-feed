@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
+import nextResponse from "./fixtures/next-response.json";
+import continuationResponse from "./fixtures/playlist-continuation.json";
+import pageInitialData from "./fixtures/playlist-page-initial-data.json";
 import {
   chaptersFrom,
   durationToSeconds,
+  innertubeClientVersionFrom,
   isVideoOnlyYouTubeUrl,
+  parsePlaylistContinuation,
   parsePlaylistFeed,
   parsePlaylistPage,
+  playlistContinuationFrom,
   parseWatchPage,
   playlistIdFrom,
   readTextLimited,
@@ -178,6 +184,8 @@ describe("durationToSeconds and viewsToNumber", () => {
     expect(viewsToNumber("4,465,289 views")).toBe(4_465_289);
     expect(viewsToNumber("2.5K views")).toBe(2500);
     expect(viewsToNumber("No views")).toBe(0);
+    expect(viewsToNumber("8.66M subscribers")).toBe(8_660_000);
+    expect(viewsToNumber("951 subscribers")).toBe(951);
   });
 });
 
@@ -260,9 +268,13 @@ describe("datacenter-friendly sources", () => {
   });
 
   it("finds the matching videoRenderer on a search page and reads its length", () => {
-    const item = (videoId: string) => JSON.stringify({ videoRenderer: { videoId, title: { runs: [{ text: `Title ${videoId}` }] }, lengthText: { simpleText: "1:02:03" }, viewCountText: { simpleText: "5K views" }, ownerText: { runs: [{ text: "Owner" }] }, detailedMetadataSnippets: [{ snippetText: { runs: [{ text: "Snippet" }] } }] } }).slice(1, -1);
+    const item = (videoId: string) => JSON.stringify({ videoRenderer: {
+      videoId, title: { runs: [{ text: `Title ${videoId}` }] }, lengthText: { simpleText: "1:02:03" }, viewCountText: { simpleText: "5K views" }, ownerText: { runs: [{ text: "Owner" }] },
+      detailedMetadataSnippets: [{ snippetText: { runs: [{ text: "Snippet" }] } }],
+      channelThumbnailSupportedRenderers: { channelThumbnailWithLinkRenderer: { thumbnail: { thumbnails: [{ url: `https://yt3.ggpht.com/${videoId}=s68`, width: 68, height: 68 }] } } },
+    } }).slice(1, -1);
     const html = `<html>{${item("other000000")}, ${item("jjjjjjjjjjj")}}</html>`;
-    expect(videoFromSearchPage(html, "jjjjjjjjjjj")).toMatchObject({ title: "Title jjjjjjjjjjj", durationSeconds: 3723, views: 5000, channel: "Owner", description: "Snippet" });
+    expect(videoFromSearchPage(html, "jjjjjjjjjjj")).toMatchObject({ title: "Title jjjjjjjjjjj", durationSeconds: 3723, views: 5000, channel: "Owner", description: "Snippet", channelAvatar: "https://yt3.ggpht.com/jjjjjjjjjjj=s68" });
     expect(videoFromSearchPage(html, "missing00000")).toBeNull();
   });
 
@@ -284,5 +296,92 @@ describe("chaptersFrom", () => {
   it("needs at least two chapters", () => {
     expect(chaptersFrom("See 2:15 for the good part")).toEqual([]);
     expect(chaptersFrom("0:00 Only one")).toEqual([]);
+  });
+});
+
+describe("likes, subscribers and channel avatar from a next response", () => {
+  it("reads the exact like count, subscriber count and largest avatar from a real response", () => {
+    expect(videoFromNextResponse(nextResponse, "aircAruvnKk")).toMatchObject({
+      title: "But what is a neural network? | Deep learning chapter 1",
+      channel: "3Blue1Brown",
+      views: 24_542_770,
+      likes: 563_461,
+      subscribers: 8_660_000,
+      channelAvatar: "https://yt3.ggpht.com/ytc/AIdro_nFzZFPLxPZRHcE3SSwzdrbuWqfoWYwLAu0_2iO6blQYAU=s176-c-k-c0x00ffffff-no-rj",
+    });
+  });
+
+  const withButton = (buttonViewModel: Record<string, unknown>, owner: Record<string, unknown> = {}) => ({ contents: [
+    { videoPrimaryInfoRenderer: { title: { simpleText: "T" }, videoActions: { menuRenderer: { topLevelButtons: [{ segmentedLikeDislikeButtonViewModel: { likeButtonViewModel: { likeButtonViewModel: { toggleButtonViewModel: { toggleButtonViewModel: { defaultButtonViewModel: { buttonViewModel } } } } } } }] } } } },
+    { videoSecondaryInfoRenderer: { owner: { videoOwnerRenderer: { title: { simpleText: "Owner" }, ...owner } } } },
+  ] });
+
+  it("falls back to the rounded title and leaves hidden counts unset", () => {
+    expect(videoFromNextResponse(withButton({ iconName: "LIKE", title: "1.2K" }), "lllllllllll")?.likes).toBe(1200);
+    expect(videoFromNextResponse(withButton({ iconName: "LIKE", title: "1", accessibilityText: "like this video along with 1 other person" }), "lllllllllll")?.likes).toBe(1);
+    const hidden = videoFromNextResponse(withButton({ iconName: "LIKE", title: "Like", accessibilityText: "I like this" }), "lllllllllll");
+    expect(hidden).toMatchObject({ title: "T", channel: "Owner" });
+    expect(hidden?.likes).toBeUndefined();
+    expect(hidden?.subscribers).toBeUndefined();
+    expect(hidden?.channelAvatar).toBeUndefined();
+  });
+
+  it("makes protocol-relative avatar urls absolute", () => {
+    const video = videoFromNextResponse(withButton({}, { thumbnail: { thumbnails: [{ url: "//yt3.ggpht.com/a=s48" }, { url: "//yt3.ggpht.com/a=s176" }] }, subscriberCountText: { simpleText: "951 subscribers" } }), "lllllllllll");
+    expect(video).toMatchObject({ channelAvatar: "https://yt3.ggpht.com/a=s176", subscribers: 951 });
+  });
+});
+
+describe("playlist continuations", () => {
+  const pageHtml = (data: unknown) => `<html><script>var ytInitialData = ${JSON.stringify(data)};</script><script>ytcfg.set({"INNERTUBE_CLIENT_VERSION":"2.20260925.08.00","INNERTUBE_API_KEY":"k"});</script></html>`;
+  it("finds the token that continues the video list on a playlist page, not the related-playlists one", () => {
+    // The fixture holds both: the list's token starts "4qmFsgKBARIk", the related-playlists one "4qmFsgJb".
+    expect(playlistContinuationFrom(pageHtml(pageInitialData))).toMatch(/^4qmFsgKBARIk/);
+    expect(innertubeClientVersionFrom(pageHtml(pageInitialData))).toBe("2.20260925.08.00");
+  });
+
+  it("returns no token when the page lists every video", () => {
+    const [list, related] = pageInitialData.contents.twoColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents;
+    const short = { contents: { sectionListRenderer: { contents: [{ itemSectionRenderer: { contents: list.itemSectionRenderer!.contents.slice(0, 1) } }, related] } } };
+    expect(playlistContinuationFrom(pageHtml(short))).toBe("");
+    expect(playlistContinuationFrom("<html>no data</html>")).toBe("");
+  });
+
+  it("reads lockups and the next token from a real browse continuation", () => {
+    const { videos, continuation } = parsePlaylistContinuation(continuationResponse);
+    expect(continuation).toMatch(/^4qmFsgJ_/);
+    expect(playlistContinuationFrom(continuationResponse)).toBe(continuation);
+    expect(videos.map((video) => video.id)).toEqual(["I9mVUo-bhM8", "RGRhinA7YDI"]);
+    expect(videos[0]).toMatchObject({
+      title: "Introduction to Related Rates",
+      channel: "The Organic Chemistry Tutor",
+      durationSeconds: 632,
+      views: 1_200_000,
+      channelAvatar: "https://yt3.ggpht.com/ytc/AIdro_lOQikQsmqQS3dG9VBvbJ03Eqqw7NshUvDNorj5UAZL6M0=s68-c-k-c0x00ffffff-no-rj",
+    });
+    expect(videos[0].thumbnail).toMatch(/^https:\/\/i\.ytimg\.com\/vi\/I9mVUo-bhM8\//);
+  });
+
+  it("reads classic playlistVideoRenderers and continuationItemRenderer tokens, merging feed details", () => {
+    const classic = (videoId: string) => ({ playlistVideoRenderer: {
+      videoId, title: { runs: [{ text: `Classic ${videoId}` }] }, lengthSeconds: "90", shortBylineText: { runs: [{ text: "Classic Channel" }] },
+      videoInfo: { runs: [{ text: "3.4K views" }, { text: " • " }, { text: "2 years ago" }] },
+    } });
+    const more = { continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: "classic-next", request: "CONTINUATION_REQUEST_TYPE_BROWSE" } } } };
+    const response = (items: unknown[]) => ({ onResponseReceivedActions: [{ appendContinuationItemsAction: { continuationItems: items } }] });
+    const fallback = { playlist: { id: LIST, title: "Feed", channel: "Feed Channel" }, videos: [{ id: "mmmmmmmmmmm", title: "From feed", channel: "Feed Channel", description: "Feed description", thumbnail: "", published: "2024-02-02" }] };
+
+    const page = parsePlaylistContinuation(response([classic("mmmmmmmmmmm"), classic("nnnnnnnnnnn"), classic("mmmmmmmmmmm"), more]), fallback);
+    expect(page.continuation).toBe("classic-next");
+    expect(page.videos.map((video) => video.id)).toEqual(["mmmmmmmmmmm", "nnnnnnnnnnn"]);
+    expect(page.videos[0]).toMatchObject({ title: "Classic mmmmmmmmmmm", channel: "Classic Channel", durationSeconds: 90, views: 3400, description: "Feed description", published: "2024-02-02" });
+    expect(parsePlaylistContinuation(response([classic("ooooooooooo")])).continuation).toBe("");
+    expect(parsePlaylistContinuation({})).toEqual({ videos: [], continuation: "" });
+  });
+
+  it("reads compact view counts from the playlist page's lockups", () => {
+    const page = parsePlaylistPage(pageHtml(pageInitialData), "PL0o_zxa4K1BWYThyV4T2Allw6zY0jEumv", 100);
+    expect(page?.videos).toHaveLength(1);
+    expect(page?.videos[0]).toMatchObject({ id: "GiCojsAWRj0", title: "Calculus 1 Review -  Basic Introduction", durationSeconds: 1604, views: 2_200_000 });
   });
 });
