@@ -177,7 +177,7 @@ export function useJev(report: (problem: string) => void) {
     } finally { setJudging(null); }
   }, [api, judgments, setProblem]);
 
-  const answered = useCallback((lens: Lens, videoId: string) => lens.questions.every((question) => judgments[questionKey(question.text)]?.[videoId] !== undefined), [judgments]);
+  const answered = useCallback((lens: Lens, videoId: string) => lens.questions.filter((question) => question.text.trim() && question.weight).every((question) => judgments[questionKey(question.text)]?.[videoId] !== undefined), [judgments]);
 
   return {
     api, loaded, playlists, setPlaylists, progress, setProgress, lenses, setLenses, judgments, drafts, setDrafts,

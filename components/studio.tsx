@@ -7,7 +7,7 @@ import { LensEditor } from "@/components/lens-editor";
 import { ReasonChips, Thumb } from "@/components/video-bits";
 import type { Jev } from "@/components/use-jev";
 import { formatDuration, type Video } from "@/lib/learning";
-import { PRESETS, questionKey, type Lens } from "@/lib/lens";
+import { PRESETS, type Lens } from "@/lib/lens";
 import { FEED_COLORS, FEED_EMOJI, addVideos, createDraft, editDraft, feedOrder, fingerprint, moveItem, setNote, toPublished, toggleHidden, togglePinned, type FeedDraft } from "@/lib/feed";
 import { playlistIdFrom, videoIdFrom } from "@/lib/youtube-playlist";
 
@@ -317,7 +317,7 @@ function Editor({ jev, draft, update, author, say, back, remove, playlists, judg
         {!manual && <aside className={`lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:rounded-3xl lg:border-2 lg:border-white/[0.07] lg:bg-[var(--ink-2)] lg:p-4 scroll-thin ${tab === "videos" ? "max-lg:hidden" : ""}`}>
           {hints.showing("dial") && <Hint className="mb-4" mood="wow" onClose={() => hints.done("dial")}>Drag a dial and watch the list re-sort. Every video shows why it moved.</Hint>}
           {lensPanel}
-          {Object.keys(draft.lens?.questions.length ? judgments : {}).length > 0 && <p className="mt-4 text-xs text-white/35">Claude&apos;s answers are saved on this device and travel with the published feed{draft.lens?.questions.some((question) => !judgments[questionKey(question.text)]) ? "" : ""}.</p>}
+          {!!draft.lens?.questions.length && <p className="mt-4 text-xs text-white/35">Claude&apos;s answers are saved on this device and travel with the published feed, so viewers never wait for them.</p>}
         </aside>}
       </div>
       <p className="mt-8 flex items-center gap-1.5 text-xs text-white/35"><Eye className="size-3.5" /> Viewers see videos in exactly this order. Pinned ones always come first.</p>
