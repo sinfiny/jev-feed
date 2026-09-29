@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSignIn } from "@clerk/react";
+import Link from "next/link";
 import { Logo, Mascot } from "@/components/brand";
 import { oauthErrorMessage } from "@/lib/auth";
 
@@ -40,6 +41,7 @@ export function Landing() {
           </button>
           {error && <p role="alert" className="mt-4 text-sm text-[var(--tomato)]">{error}</p>}
           <p className="mt-4 max-w-sm text-xs leading-5 text-white/40">Jev reads your playlists and likes. Progress, bookmarks and notes stay in this browser. No ads, no autoplay, no comments.</p>
+          <p className="mt-3 max-w-sm text-xs leading-5 text-white/40">By continuing, you agree to the <Link href="/terms" className="underline underline-offset-2">Jev terms</Link> and <a href="https://www.youtube.com/t/terms" className="underline underline-offset-2">YouTube terms</a>. Read <Link href="/privacy" className="underline underline-offset-2">Jev&apos;s privacy policy</Link>.</p>
         </div>
         <div className="relative mx-auto">
           <div className="absolute -left-4 -top-6 z-10 -rotate-6 rounded-2xl rounded-bl-none border-2 border-black/70 bg-[var(--paper)] px-3 py-2 font-display text-[var(--ink)] shadow-[0_4px_0_#000a]">Hi, I&apos;m Jev!</div>

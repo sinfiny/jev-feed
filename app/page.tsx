@@ -2,6 +2,7 @@
 
 import { isTyping } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { UserButton, useAuth, useUser } from "@clerk/react";
 import { Clapperboard, Library as LibraryIcon, RefreshCw, Sparkles } from "lucide-react";
 import { Hint, Logo, Mascot, burst, burstFrom, useHints, type Mood } from "@/components/brand";
@@ -275,12 +276,14 @@ function App() {
       <div className="flex items-center px-4 pb-2 pt-3">{syncChip}</div>
       {permission && <div className="px-3 pb-3">{permission}</div>}
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 pb-8">{jev.loaded ? tree : null}</div>
+      <p className="px-4 pb-3 text-xs text-white/35"><Link href="/privacy" className="hover:text-white underline underline-offset-2">Privacy</Link> · <Link href="/terms" className="hover:text-white underline underline-offset-2">Terms</Link></p>
     </aside>
 
     <div className="min-w-0">
       <header className={`flex items-center gap-2 px-4 py-2.5 lg:hidden ${view === "watch" && video ? "hidden" : ""}`}>
         <span key={mood} className={mood === "calm" ? "" : "animate-bounce-once"}><Logo size={30} mood={mood} /></span>
         <span className="min-w-0 flex-1 pl-2">{view !== "library" && jev.sync && syncChip}</span>
+        <Link href="/privacy" className="px-1 text-xs text-white/40 underline underline-offset-2">Privacy</Link>
         <UserButton />
       </header>
       <main className="min-w-0">{main}</main>
