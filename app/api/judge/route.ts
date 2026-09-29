@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "cloudflare:workers";
-import { JUDGE_BATCH, JUDGE_QUESTIONS, JUDGE_SYSTEM, judgePrompt, judgeSchema, readJudgments, type JudgeVideo } from "@/lib/judge";
+import { JUDGE_BATCH, JUDGE_CALLS_PER_DAY, JUDGE_QUESTIONS, JUDGE_SYSTEM, judgePrompt, judgeSchema, readJudgments, type JudgeVideo } from "@/lib/judge";
 import { failure, viewerId } from "../account/google";
 
 export const runtime = "edge";
@@ -20,6 +20,14 @@ export async function POST(request: Request) {
   const questions = Array.isArray(body?.questions) ? body.questions.filter((item): item is string => typeof item === "string" && !!item.trim()).map((item) => item.slice(0, 160)).slice(0, JUDGE_QUESTIONS) : [];
   const videos = Array.isArray(body?.videos) ? body.videos.filter((video) => typeof video?.id === "string" && typeof video.title === "string").slice(0, JUDGE_BATCH) : [];
   if (!questions.length || !videos.length) return Response.json({ error: "Send at least one question and one video." }, { status: 400 });
+
+  // Any Google account can sign in, so everyone shares one daily allowance, counted before the call.
+  // KV is eventually consistent; a burst can overshoot by a few calls, which is fine for a spending guard.
+  if (!env.FEEDS) return Response.json({ error: "Questions need Claude, which is not switched on for this deployment." }, { status: 503 });
+  const day = `judge:${new Date().toISOString().slice(0, 10)}`;
+  const used = Number(await env.FEEDS.get(day)) || 0;
+  if (used >= JUDGE_CALLS_PER_DAY) return Response.json({ error: "Jev has asked Claude all it can for today. Try again tomorrow." }, { status: 429 });
+  await env.FEEDS.put(day, String(used + 1), { expirationTtl: 2 * 24 * 60 * 60 });
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   try {

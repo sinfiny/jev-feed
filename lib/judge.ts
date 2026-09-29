@@ -7,6 +7,8 @@ import { questionKey, type Judgments } from "@/lib/lens";
  */
 export const JUDGE_BATCH = 20;
 export const JUDGE_QUESTIONS = 5;
+/** Claude calls allowed per UTC day across every organizer: about 800 videos, a few dollars at most. */
+export const JUDGE_CALLS_PER_DAY = 40;
 
 export type JudgeVideo = Pick<Video, "id" | "title" | "channel" | "description" | "durationSeconds" | "keywords">;
 
