@@ -1,32 +1,54 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
+@import "@fontsource-variable/bricolage-grotesque";
 
+/*
+ * Jev's design language: a dark, warm room for watching, lit by candy colors that each mean one thing.
+ *   lime  — Jev itself, progress, done          sun   — in progress, bookmarks
+ *   pink  — feeds and sharing                   sky   — snoozed, calm
+ *   grape — lenses and judging                  tomato — taking something away
+ * Surfaces are "stickers": rounded, with a hard shadow when they can be pressed. Motion only answers the
+ * viewer (a press, a done, a publish); nothing moves on its own while someone is trying to focus.
+ */
 :root {
-  --ink: #11120f;
-  --paper: #f2f0e8;
-  --acid: #ccff35;
-  --acid-bright: #dcff72;
-  --violet: #7657ff;
+  --ink: #12110f;
+  --ink-2: #1b1a17;
+  --ink-3: #26241f;
+  --ink-4: #33302a;
+  --paper: #f6f2e7;
+  --lime: #c6ff3d;
+  --lime-deep: #8fcc00;
+  --pink: #ff5fa2;
+  --sky: #58c7ff;
+  --sun: #ffcf3d;
+  --grape: #9b7bff;
+  --tomato: #ff5a4e;
+  /* Older names, still used by a few pages. */
+  --acid: var(--lime);
+  --acid-bright: #dcff7a;
+  --violet: var(--grape);
+
   --background: var(--ink);
   --foreground: var(--paper);
-  --card: #191a17;
+  --card: var(--ink-2);
   --card-foreground: var(--paper);
-  --popover: #191a17;
+  --popover: var(--ink-2);
   --popover-foreground: var(--paper);
-  --primary: var(--acid);
+  --primary: var(--lime);
   --primary-foreground: var(--ink);
-  --secondary: #252620;
+  --secondary: var(--ink-3);
   --secondary-foreground: var(--paper);
-  --muted: #252620;
-  --muted-foreground: #9a9c92;
-  --accent: #2d2f28;
+  --muted: var(--ink-3);
+  --muted-foreground: #a29d8f;
+  --accent: var(--ink-4);
   --accent-foreground: var(--paper);
-  --destructive: #ff565c;
-  --border: #ffffff1a;
+  --destructive: var(--tomato);
+  --border: #ffffff17;
   --input: #ffffff1f;
-  --ring: var(--acid);
-  --radius: 0.875rem;
+  --ring: var(--lime);
+  --radius: 1rem;
+  --spring: cubic-bezier(.34, 1.56, .64, 1);
 }
 
 @theme inline {
@@ -48,19 +70,86 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-paper: var(--paper);
+  --color-lime: var(--lime);
+  --color-pink: var(--pink);
+  --color-sky: var(--sky);
+  --color-sun: var(--sun);
+  --color-grape: var(--grape);
+  --color-tomato: var(--tomato);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
-html { background: var(--ink); }
-body { margin: 0; background: var(--ink); color: var(--paper); font-family: Arial, Helvetica, sans-serif; }
-.font-display { font-family: Arial, Helvetica, sans-serif; font-weight: 700; letter-spacing: -0.035em; }
-button, input { font: inherit; }
+html { background: var(--ink); color-scheme: dark; -webkit-tap-highlight-color: transparent; }
+body { margin: 0; background: var(--ink); color: var(--paper); font-family: var(--font-sans); }
+.font-display { font-family: var(--font-display); font-weight: 750; letter-spacing: -0.03em; font-variation-settings: "opsz" 96; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
-::selection { background: var(--acid); color: var(--ink); }
+button:disabled { cursor: default; }
+::selection { background: var(--lime); color: var(--ink); }
+:focus-visible { outline: 2.5px solid var(--lime); outline-offset: 2px; border-radius: 10px; }
 
+/* A pressable sticker: solid fill, dark rim, a hard shadow it sinks into. Set --tone for the fill. */
+.juicy {
+  --tone: var(--lime);
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+  background: var(--tone); color: var(--ink); font-family: var(--font-display); font-weight: 700; letter-spacing: -.01em;
+  border: 2px solid #0008; border-radius: 14px;
+  box-shadow: 0 4px 0 0 #000b, inset 0 -3px 0 #0002, inset 0 2px 0 #fff6;
+  transition: transform .18s var(--spring), box-shadow .18s var(--spring), filter .15s;
+}
+.juicy:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 0 0 #000b, inset 0 -3px 0 #0002, inset 0 2px 0 #fff6; filter: brightness(1.05); }
+.juicy:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 0 #000b, inset 0 -1px 0 #0002, inset 0 2px 0 #fff4; }
+.juicy:disabled { filter: grayscale(.7) brightness(.7); }
+.juicy-ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: .4rem; border-radius: 12px;
+  color: #f6f2e7cc; transition: background .15s, color .15s, transform .18s var(--spring);
+}
+.juicy-ghost:hover:not(:disabled) { background: #ffffff12; color: var(--paper); }
+.juicy-ghost:active:not(:disabled) { transform: scale(.94); }
+.juicy-ghost[aria-pressed="true"] { background: #ffffff1c; color: var(--paper); }
+
+.sticker { background: var(--ink-2); border: 1.5px solid #ffffff12; border-radius: 22px; }
+.sticker-raised { background: var(--ink-2); border: 1.5px solid #ffffff14; border-radius: 22px; box-shadow: 0 5px 0 0 #000a; }
+.dotted { background-image: radial-gradient(#ffffff0d 1.2px, transparent 1.2px); background-size: 18px 18px; }
+.kbd { display: inline-grid; place-items: center; min-width: 1.25rem; height: 1.25rem; padding: 0 .3rem; border-radius: 6px; background: #0003; border: 1px solid #0003; font: 700 11px/1 var(--font-sans); }
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.scroll-thin { scrollbar-width: thin; scrollbar-color: #ffffff1f transparent; }
+
+/* Motion that answers the viewer. Each runs once. */
+@keyframes jev-pop { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes jev-bounce { 0%, 100% { transform: translateY(0) scale(1); } 30% { transform: translateY(-14%) scale(1.04, .96); } 55% { transform: translateY(0) scale(1.1, .88); } 75% { transform: translateY(-4%) scale(.97, 1.03); } }
+@keyframes jev-wiggle { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-9deg); } 40% { transform: rotate(8deg); } 60% { transform: rotate(-5deg); } 80% { transform: rotate(3deg); } }
+@keyframes jev-rise { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes jev-confetti { 0% { transform: translate(0, 0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--spin)); opacity: 0; } }
+@keyframes jev-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.animate-pop { animation: jev-pop .42s var(--spring) both; }
+.animate-bounce-once { animation: jev-bounce .7s ease-out both; }
+.animate-wiggle { animation: jev-wiggle .5s ease-in-out both; }
+.animate-rise { animation: jev-rise .35s var(--spring) both; }
+.confetti-bit { position: fixed; z-index: 90; width: 8px; height: 12px; border-radius: 2px; pointer-events: none; animation: jev-confetti .9s cubic-bezier(.2, .7, .3, 1) forwards; }
+
+/* The range input behind lens dials and the volume control, drawn as a chunky track. */
+.dial { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; cursor: pointer; }
+.dial::-webkit-slider-runnable-track { height: 10px; border-radius: 99px; background: var(--track, #ffffff1a); }
+.dial::-moz-range-track { height: 10px; border-radius: 99px; background: var(--track, #ffffff1a); }
+.dial::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -7px; width: 24px; height: 24px; border-radius: 50%; background: var(--thumb, var(--paper)); border: 3px solid var(--ink); box-shadow: 0 3px 0 #000a; transition: transform .18s var(--spring); }
+.dial::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--thumb, var(--paper)); border: 3px solid var(--ink); box-shadow: 0 3px 0 #000a; }
+.dial:active::-webkit-slider-thumb { transform: scale(1.18); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .confetti-bit { display: none; }
+}
 @media (max-width: 640px) { body { overflow-x: hidden; } }

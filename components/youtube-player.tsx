@@ -8,10 +8,16 @@ type YTPlayer = {
   cueVideoById: (clip: { videoId: string; startSeconds?: number; endSeconds?: number }) => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   getCurrentTime: () => number;
+  getDuration: () => number;
   getPlayerState: () => number;
   playVideo: () => void;
   pauseVideo: () => void;
   setPlaybackRate: (rate: number) => void;
+  setVolume: (volume: number) => void;
+  getVolume: () => number;
+  mute: () => void;
+  unMute: () => void;
+  isMuted: () => boolean;
   destroy: () => void;
 };
 type YTNamespace = { Player: new (element: HTMLElement, options: object) => YTPlayer };
@@ -20,6 +26,7 @@ declare global { interface Window { YT?: YTNamespace; onYouTubeIframeAPIReady?: 
 
 const ENDED = 0;
 const PLAYING = 1;
+const BUFFERING = 3;
 
 let api: Promise<YTNamespace> | undefined;
 function loadApi() {
@@ -37,25 +44,30 @@ function loadApi() {
 /** What to play. A chapter clip carries an end; `nonce` makes choosing the same clip again restart it. */
 export type Clip = { videoId: string; start: number; end?: number; autoplay: boolean; nonce: number };
 
+export type PlaybackState = "idle" | "playing" | "paused" | "buffering" | "ended";
+
 export type PlayerHandle = {
   time: () => number;
+  duration: () => number;
   seek: (seconds: number) => void;
   togglePlay: () => void;
+  setVolume: (volume: number) => void;
+  setMuted: (muted: boolean) => void;
 };
 
-type Props = { clip: Clip; rate: number; onEnded: () => void; ref?: Ref<PlayerHandle> };
+type Props = { clip: Clip; rate: number; onEnded: () => void; onState?: (state: PlaybackState) => void; ref?: Ref<PlayerHandle> };
 
 /**
- * YouTube's own player, with its native controls, driven through the IFrame API so Jev's control bar
- * can change speed, seek, and read the time for bookmarks and resume.
+ * YouTube's player with its own controls hidden, driven through the IFrame API. Jev's control deck
+ * (components/player-deck.tsx) sits outside the frame and does everything the native bar did.
  */
-export function YouTubePlayer({ clip, rate, onEnded, ref }: Props) {
+export function YouTubePlayer({ clip, rate, onEnded, onState, ref }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<YTPlayer | null>(null);
   const ready = useRef(false);
   const loaded = useRef(clip.nonce);
-  const latest = useRef({ clip, rate, onEnded });
-  useEffect(() => { latest.current = { clip, rate, onEnded }; });
+  const latest = useRef({ clip, rate, onEnded, onState });
+  useEffect(() => { latest.current = { clip, rate, onEnded, onState }; });
 
   /** Loads the newest clip once the player exists; clips chosen before it was ready are applied on ready. */
   const sync = useRef(() => {
@@ -68,8 +80,11 @@ export function YouTubePlayer({ clip, rate, onEnded, ref }: Props) {
 
   useImperativeHandle(ref, () => ({
     time: () => (ready.current ? player.current?.getCurrentTime() : 0) ?? 0,
+    duration: () => (ready.current ? player.current?.getDuration() : 0) ?? 0,
     seek: (seconds) => { if (ready.current) { player.current?.seekTo(Math.max(0, seconds), true); player.current?.playVideo(); } },
     togglePlay: () => { if (!ready.current) return; if (player.current?.getPlayerState() === PLAYING) player.current.pauseVideo(); else player.current?.playVideo(); },
+    setVolume: (volume) => { if (ready.current) { player.current?.setVolume(volume); if (volume > 0) player.current?.unMute(); } },
+    setMuted: (muted) => { if (ready.current) { if (muted) player.current?.mute(); else player.current?.unMute(); } },
   }), []);
 
   useEffect(() => {
@@ -84,11 +99,12 @@ export function YouTubePlayer({ clip, rate, onEnded, ref }: Props) {
         videoId: first.videoId,
         width: "100%",
         height: "100%",
-        playerVars: { start: Math.floor(first.start), ...(first.end ? { end: Math.ceil(first.end) } : {}), autoplay: first.autoplay ? 1 : 0, rel: 0, playsinline: 1 },
+        playerVars: { start: Math.floor(first.start), ...(first.end ? { end: Math.ceil(first.end) } : {}), autoplay: first.autoplay ? 1 : 0, controls: 0, disablekb: 1, rel: 0, playsinline: 1, iv_load_policy: 3, fs: 0 },
         events: {
-          onReady: () => { ready.current = true; player.current?.setPlaybackRate(latest.current.rate); sync.current(); },
+          onReady: () => { ready.current = true; player.current?.setPlaybackRate(latest.current.rate); sync.current(); latest.current.onState?.("paused"); },
           onStateChange: (event: { data: number }) => {
             if (event.data === PLAYING) player.current?.setPlaybackRate(latest.current.rate);
+            latest.current.onState?.(event.data === PLAYING ? "playing" : event.data === BUFFERING ? "buffering" : event.data === ENDED ? "ended" : "paused");
             if (event.data === ENDED) latest.current.onEnded();
           },
         },
@@ -101,5 +117,5 @@ export function YouTubePlayer({ clip, rate, onEnded, ref }: Props) {
 
   useEffect(() => { if (ready.current) player.current?.setPlaybackRate(rate); }, [rate]);
 
-  return <div ref={host} className="aspect-video w-full overflow-hidden bg-black [&>div]:size-full [&_iframe]:size-full" />;
+  return <div ref={host} className="size-full overflow-hidden bg-black [&>div]:size-full [&_iframe]:size-full" />;
 }
