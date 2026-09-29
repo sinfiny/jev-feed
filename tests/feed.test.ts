@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Video } from "@/lib/learning";
 import { PRESETS } from "@/lib/lens";
-import { addVideos, createDraft, feedOrder, moveItem, parseDrafts, parsePublishedFeed, toPublished, toggleHidden, togglePinned, setNote } from "@/lib/feed";
+import { addVideos, createDraft, feedOrder, fingerprint, moveItem, parseDrafts, parsePublishedFeed, toPublished, toggleHidden, togglePinned, setNote } from "@/lib/feed";
 
 const video = (id: string, title = `Video ${id}`, extra: Partial<Video> = {}): Video => ({ id: id.padEnd(11, "x"), title, channel: "c", description: "d".repeat(1000), thumbnail: "", ...extra });
 const ids = (list: Array<{ video: Video }>) => list.map((item) => item.video.id[0]);
@@ -37,6 +37,13 @@ describe("designing a feed", () => {
     expect(feed.items[0].video.description).toHaveLength(400);
     expect(feed.judgments).toEqual({ "real code?": { [video("a").id]: 8 } });
     expect(parsePublishedFeed(JSON.parse(JSON.stringify(feed)))).toMatchObject({ title: "Graphs", author: "Ana", items: [{ note: "Start with this one" }] });
+  });
+
+  it("fingerprints what viewers would see, so an edit after publishing is noticed", () => {
+    const draft = createDraft("Graphs", [video("a"), video("b")]);
+    const published = fingerprint(toPublished(draft, {}, "Ana"));
+    expect(fingerprint(toPublished(draft, {}))).toBe(published);
+    expect(fingerprint(toPublished(setNote(draft, video("a").id, "Watch this"), {}))).not.toBe(published);
   });
 
   it("rejects or cleans what a client should not be able to store", () => {

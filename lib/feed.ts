@@ -107,7 +107,7 @@ export function toPublished(draft: FeedDraft, judgments: Judgments, author?: str
 
 /** Changes whenever what viewers would see changes, to tell the organizer their link is behind the draft. */
 export const fingerprint = (feed: PublishedFeed) => {
-  const text = JSON.stringify({ ...feed, publishedAt: 0 });
+  const text = JSON.stringify({ ...feed, publishedAt: 0, author: undefined });
   let hash = 0;
   for (let index = 0; index < text.length; index += 1) hash = (hash * 31 + text.charCodeAt(index)) | 0;
   return hash.toString(36);
