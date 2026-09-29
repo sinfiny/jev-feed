@@ -394,6 +394,9 @@ function FeedList({ feed, tone, order, aside, notes, progress, pending, playingI
   playingId: string | null; popped: string | null; youtubeUrl?: string; hint: ReactNode; onPlay: (video: Video) => void; onToggleDone: (id: string, from: Element | null) => void;
 }) {
   const [showAside, setShowAside] = useState(false);
+  // Long feeds render in pages; the playing video is always inside the rendered part.
+  const [limit, setLimit] = useState(60);
+  const shown = Math.max(limit, order.findIndex((entry) => entry.video.id === playingId) + 10);
   const why = [...new Set(aside.map((entry) => entry.why === "Short" ? "shorts" : entry.why.toLowerCase()))].join(", ");
   const row = (entry: Entry, label: string) => {
     const saved = progress.videos[entry.video.id];
@@ -408,9 +411,10 @@ function FeedList({ feed, tone, order, aside, notes, progress, pending, playingI
     </div>
     {hint}
     <ol className="space-y-1.5">
-      {order.map((entry, index) => row(entry, String(index + 1)))}
-      {Array.from({ length: Math.min(pending, 6) }, (_, index) => <SkeletonRow key={`pending-${index}`} />)}
+      {order.slice(0, shown).map((entry, index) => row(entry, String(index + 1)))}
+      {order.length <= shown && Array.from({ length: Math.min(pending, 6) }, (_, index) => <SkeletonRow key={`pending-${index}`} />)}
     </ol>
+    {order.length > shown && <button onClick={() => setLimit(shown + 100)} className="juicy-ghost mx-auto mt-3 flex h-10 px-4 text-sm font-bold" style={{ color: tone }}>Show {Math.min(100, order.length - shown)} more of {order.length - shown}</button>}
     {pending > 6 && <p className="mt-2 px-1 text-sm text-white/45">…and {pending - 6} more on the way.</p>}
     {aside.length > 0 && <div className="mt-6">
       <button onClick={() => setShowAside((value) => !value)} aria-expanded={showAside} className="juicy-ghost w-full justify-between rounded-2xl border-2 border-dashed border-white/15 px-4 py-3 text-left text-sm">
