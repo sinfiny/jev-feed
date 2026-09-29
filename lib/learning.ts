@@ -10,11 +10,17 @@ export type Video = {
   /** Length in seconds, read from the playlist page badge or the watch page. */
   durationSeconds?: number;
   views?: number;
+  likes?: number;
+  /** The channel's subscriber count, copied onto each of its videos. */
+  subscribers?: number;
+  channelAvatar?: string;
   /** YouTube's own category, e.g. "Education". Only known after watch-page enrichment. */
   category?: string;
   /** Creator chapters (or YouTube's auto-generated ones), each with its start time in seconds. */
   chapters?: Chapter[];
   keywords?: string[];
+  /** Set once a source with the full description (Data API or /api/video) has been read, so enrichment never repeats. */
+  complete?: boolean;
 };
 
 export type FeedTemplate = "stretch" | "balanced" | "kids";
