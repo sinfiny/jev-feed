@@ -1,0 +1,236 @@
+{
+ "onResponseReceivedActions": [
+  {
+   "appendContinuationItemsAction": {
+    "continuationItems": [
+     {
+      "lockupViewModel": {
+       "contentImage": {
+        "thumbnailViewModel": {
+         "image": {
+          "sources": [
+           {
+            "url": "https://i.ytimg.com/vi/I9mVUo-bhM8/hqdefault.jpg?sqp=-oaymwEiCKgBEF5IWvKriqkDFQgBFQAAAAAYASUAAMhCPQCAokN4AQ==&rs=AOn4CLAjy2PjNapUoNeMHBffUa27JnUWZg",
+            "width": 168,
+            "height": 94
+           },
+           {
+            "url": "https://i.ytimg.com/vi/I9mVUo-bhM8/hqdefault.jpg?sqp=-oaymwEiCMQBEG5IWvKriqkDFQgBFQAAAAAYASUAAMhCPQCAokN4AQ==&rs=AOn4CLDY_-RtfYuHlIGZXzz6BP6eCt2gGQ",
+            "width": 196,
+            "height": 110
+           },
+           {
+            "url": "https://i.ytimg.com/vi/I9mVUo-bhM8/hqdefault.jpg?sqp=-oaymwEjCPYBEIoBSFryq4qpAxUIARUAAAAAGAElAADIQj0AgKJDeAE=&rs=AOn4CLAH0KiO6h3amOCalmBdrLyYazCYSg",
+            "width": 246,
+            "height": 138
+           },
+           {
+            "url": "https://i.ytimg.com/vi/I9mVUo-bhM8/hqdefault.jpg?sqp=-oaymwEjCNACELwBSFryq4qpAxUIARUAAAAAGAElAADIQj0AgKJDeAE=&rs=AOn4CLAcj8caHKHbZCFXRp0JmTA6aoXp9g",
+            "width": 336,
+            "height": 188
+           }
+          ]
+         },
+         "overlays": [
+          {
+           "thumbnailBottomOverlayViewModel": {
+            "badges": [
+             {
+              "thumbnailBadgeViewModel": {
+               "text": "10:32",
+               "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+               "animatedText": "Now playing"
+              }
+             }
+            ]
+           }
+          }
+         ]
+        }
+       },
+       "metadata": {
+        "lockupMetadataViewModel": {
+         "title": {
+          "content": "Introduction to Related Rates"
+         },
+         "image": {
+          "decoratedAvatarViewModel": {
+           "avatar": {
+            "avatarViewModel": {
+             "image": {
+              "sources": [
+               {
+                "url": "https://yt3.ggpht.com/ytc/AIdro_lOQikQsmqQS3dG9VBvbJ03Eqqw7NshUvDNorj5UAZL6M0=s68-c-k-c0x00ffffff-no-rj",
+                "width": 68,
+                "height": 68
+               }
+              ]
+             },
+             "avatarImageSize": "AVATAR_SIZE_M"
+            }
+           },
+           "a11yLabel": "Go to channel The Organic Chemistry Tutor"
+          }
+         },
+         "metadata": {
+          "contentMetadataViewModel": {
+           "metadataRows": [
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "The Organic Chemistry Tutor"
+               }
+              }
+             ]
+            },
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "1.2M views"
+               }
+              },
+              {
+               "text": {
+                "content": "8 years ago"
+               },
+               "accessibilityLabel": "8 years ago"
+              }
+             ]
+            }
+           ],
+           "delimiter": " • "
+          }
+         }
+        }
+       },
+       "contentId": "I9mVUo-bhM8",
+       "contentType": "LOCKUP_CONTENT_TYPE_VIDEO"
+      }
+     },
+     {
+      "lockupViewModel": {
+       "contentImage": {
+        "thumbnailViewModel": {
+         "image": {
+          "sources": [
+           {
+            "url": "https://i.ytimg.com/vi/RGRhinA7YDI/hqdefault.jpg?sqp=-oaymwEiCKgBEF5IWvKriqkDFQgBFQAAAAAYASUAAMhCPQCAokN4AQ==&rs=AOn4CLB_sPz-TaLelawiMR01qFf8lIUceA",
+            "width": 168,
+            "height": 94
+           },
+           {
+            "url": "https://i.ytimg.com/vi/RGRhinA7YDI/hqdefault.jpg?sqp=-oaymwEiCMQBEG5IWvKriqkDFQgBFQAAAAAYASUAAMhCPQCAokN4AQ==&rs=AOn4CLCZETbc6h_j8e9d6CvQyD0X322MYA",
+            "width": 196,
+            "height": 110
+           },
+           {
+            "url": "https://i.ytimg.com/vi/RGRhinA7YDI/hqdefault.jpg?sqp=-oaymwEjCPYBEIoBSFryq4qpAxUIARUAAAAAGAElAADIQj0AgKJDeAE=&rs=AOn4CLCh2IAzyHsQ562w8Ue-RwRQKRYU0A",
+            "width": 246,
+            "height": 138
+           },
+           {
+            "url": "https://i.ytimg.com/vi/RGRhinA7YDI/hqdefault.jpg?sqp=-oaymwEjCNACELwBSFryq4qpAxUIARUAAAAAGAElAADIQj0AgKJDeAE=&rs=AOn4CLDXPNJ9DmD_WcwNmvdDkk9nlychlw",
+            "width": 336,
+            "height": 188
+           }
+          ]
+         },
+         "overlays": [
+          {
+           "thumbnailBottomOverlayViewModel": {
+            "badges": [
+             {
+              "thumbnailBadgeViewModel": {
+               "text": "10:11",
+               "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+               "animatedText": "Now playing"
+              }
+             }
+            ]
+           }
+          }
+         ]
+        }
+       },
+       "metadata": {
+        "lockupMetadataViewModel": {
+         "title": {
+          "content": "Related Rates - Area of a Triangle"
+         },
+         "image": {
+          "decoratedAvatarViewModel": {
+           "avatar": {
+            "avatarViewModel": {
+             "image": {
+              "sources": [
+               {
+                "url": "https://yt3.ggpht.com/ytc/AIdro_lOQikQsmqQS3dG9VBvbJ03Eqqw7NshUvDNorj5UAZL6M0=s68-c-k-c0x00ffffff-no-rj",
+                "width": 68,
+                "height": 68
+               }
+              ]
+             },
+             "avatarImageSize": "AVATAR_SIZE_M"
+            }
+           },
+           "a11yLabel": "Go to channel The Organic Chemistry Tutor"
+          }
+         },
+         "metadata": {
+          "contentMetadataViewModel": {
+           "metadataRows": [
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "The Organic Chemistry Tutor"
+               }
+              }
+             ]
+            },
+            {
+             "metadataParts": [
+              {
+               "text": {
+                "content": "122K views"
+               }
+              },
+              {
+               "text": {
+                "content": "8 years ago"
+               },
+               "accessibilityLabel": "8 years ago"
+              }
+             ]
+            }
+           ],
+           "delimiter": " • "
+          }
+         }
+        }
+       },
+       "contentId": "RGRhinA7YDI",
+       "contentType": "LOCKUP_CONTENT_TYPE_VIDEO"
+      }
+     },
+     {
+      "continuationItemViewModel": {
+       "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+       "continuationCommand": {
+        "innertubeCommand": {
+         "continuationCommand": {
+          "token": "4qmFsgJ_EiRWTFBMMG9fenhhNEsxQldZVGh5VjRUMkFsbHc2elkwakV1bXYaMkNBSjZIMUJVT2tOTlowSkphRUY0VFZWUk5VOUVhekJSTUVrd1RXcGFRbEZxYUVjJTNEmgIiUEwwb196eGE0SzFCV1lUaHlWNFQyQWxsdzZ6WTBqRXVtdg%3D%3D",
+          "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+         }
+        }
+       }
+      }
+     }
+    ],
+    "targetId": "browse-feedVL"
+   }
+  }
+ ]
+}
