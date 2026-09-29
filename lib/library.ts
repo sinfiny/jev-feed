@@ -1,11 +1,12 @@
-import { LEARNING_STATE_KEY, parseLearningState, type Chapter, type Video } from "@/lib/learning";
+import { isStale, LEARNING_STATE_KEY, parseLearningState, type Chapter, type Video } from "@/lib/learning";
 import { mergeVideos } from "@/lib/youtube-playlist";
 import { readStore, writeStore } from "@/lib/store";
 
 /**
  * The viewer's playlists and what they have done with each video, both kept in the browser.
  * Playlists are local copies of the playlists in the viewer's YouTube account. A visit re-reads only playlists
- * whose first page changed, and fetches details only for videos it has not seen (see app/page.tsx).
+ * whose first page changed, and fetches details only for videos it has not seen or last read over 29 days ago
+ * (see components/use-jev.ts).
  * Progress is keyed by video id, so a video marked done is done in every playlist that holds it.
  * Playlists (large, rarely written) live in IndexedDB; progress (small, written while watching) in localStorage.
  */
@@ -199,6 +200,16 @@ export function syncPlaylists(current: LibraryPlaylist[], incoming: Array<{ id: 
     return [{ id: existing?.id ?? newId("p"), title: source.title, videos, sourcePlaylistId: source.id, signature: source.signature ?? existing?.signature, lensId: existing?.lensId }];
   });
 }
+
+/**
+ * What is left of the library once Jev can no longer read the viewer's YouTube account: videos read within
+ * the last 30 days. Older copies cannot be read again, so they go, and so does a playlist left empty.
+ * Progress is kept, so a video that comes back is where the viewer left it.
+ */
+export const withoutStale = (playlists: LibraryPlaylist[], now: number) => playlists.flatMap((playlist) => {
+  const videos = playlist.videos.filter((video) => !isStale(video, now));
+  return videos.length === playlist.videos.length ? [playlist] : videos.length ? [{ ...playlist, videos, signature: undefined }] : [];
+});
 
 /** Puts a video at the top of a playlist, or takes it out. Used to mirror a like into the Liked playlist. */
 export const setMembership = (playlists: LibraryPlaylist[], sourcePlaylistId: string, video: Video, member: boolean) =>

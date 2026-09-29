@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/react";
-import type { Video } from "@/lib/learning";
+import { isStale, type Video } from "@/lib/learning";
 import { mergeJudgments, parseJudgments, parseLens, questionKey, unjudged, type Judgments, type Lens } from "@/lib/lens";
 import { JUDGE_BATCH, judgeVideo } from "@/lib/judge";
-import { parseDrafts, type FeedDraft } from "@/lib/feed";
+import { parseDrafts, withLibraryDetails, type FeedDraft } from "@/lib/feed";
 import { readStore, writeStore } from "@/lib/store";
 import {
-  emptyProgress, mergeVideoDetails, playlistSignature, readLibrary, syncPlaylists, videosById, writeLibrary, writeProgress,
+  emptyProgress, mergeVideoDetails, playlistSignature, readLibrary, syncPlaylists, videosById, withoutStale, writeLibrary, writeProgress,
   type LibraryPlaylist, type Progress,
 } from "@/lib/library";
 import type { AccountPlaylist } from "@/lib/youtube-account";
@@ -88,14 +88,18 @@ export function useJev(report: (problem: string) => void) {
 
   /**
    * One visit's refresh. For each playlist: read the first page of ids; if it matches last time, stop there.
-   * Otherwise page through the ids and fetch details only for videos not already complete in the library.
-   * Each playlist lands in the sidebar as soon as it is done.
+   * Otherwise page through the ids and fetch details only for videos not already complete in the library,
+   * or read so long ago that YouTube's API policy wants them read again. A video YouTube no longer returns
+   * keeps its copy only until that copy is stale. Each playlist lands in the sidebar as soon as it is done.
    */
   const refresh = useCallback(async (full = false) => {
     setSync({ label: "Checking your playlists", done: 0, total: 0 });
+    const now = Date.now();
+    const upToDate = (video: Video | undefined) => !!video?.complete && !isStale(video, now);
     try {
       const { playlists: sources } = await api<{ playlists: AccountPlaylist[] }>("/api/account/playlists");
       const results = new Map<string, { videos?: Video[]; signature?: string }>();
+      const read = new Map<string, Video>();
       const land = () => setPlaylists((existing) => syncPlaylists(existing, sources.map((source) => ({ ...source, ...results.get(source.id) }))));
       let failed = 0;
       await pool(sources, 3, async (source) => {
@@ -105,7 +109,7 @@ export function useJev(report: (problem: string) => void) {
           const first = await api<Page>(base);
           const signature = playlistSignature(first.total, first.ids);
           const existing = current.current.find((item) => item.sourcePlaylistId === source.id);
-          if (!full && existing?.signature === signature) { results.set(source.id, {}); return; }
+          if (!full && existing?.signature === signature && !existing.videos.some((video) => isStale(video, now))) { results.set(source.id, {}); return; }
           const ids = [...first.ids];
           for (let next = first.next; next;) {
             setSync({ label: `Reading ${source.title}`, done: ids.length, total: first.total });
@@ -113,17 +117,17 @@ export function useJev(report: (problem: string) => void) {
             ids.push(...page.ids); next = page.next;
           }
           const known = videosById(current.current);
-          const missing = [...new Set(ids)].filter((id) => !known.get(id)?.complete);
+          const missing = [...new Set(ids)].filter((id) => !upToDate(known.get(id)));
           const fresh = new Map<string, Video>();
           const chunks = Array.from({ length: Math.ceil(missing.length / DETAILS_CHUNK) }, (_, index) => missing.slice(index * DETAILS_CHUNK, (index + 1) * DETAILS_CHUNK));
           let fetched = 0;
           await pool(chunks, 3, async (chunk) => {
             const { videos } = await api<{ videos: Video[] }>(`/api/account/videos?ids=${chunk.join(",")}`);
-            videos.forEach((video) => fresh.set(video.id, video));
+            videos.forEach((video) => { fresh.set(video.id, video); read.set(video.id, video); });
             fetched += chunk.length;
             if (missing.length > DETAILS_CHUNK) setSync({ label: `New in ${source.title}`, done: fetched, total: missing.length });
           });
-          results.set(source.id, { signature, videos: ids.flatMap((id) => fresh.get(id) ?? known.get(id) ?? []) });
+          results.set(source.id, { signature, videos: ids.flatMap((id) => { const kept = known.get(id); return fresh.get(id) ?? (kept && !isStale(kept, now) ? kept : []); }) });
         } catch (cause) {
           if (lacksYouTube(cause)) throw cause;
           failed += 1;
@@ -132,9 +136,10 @@ export function useJev(report: (problem: string) => void) {
         land();
       });
       land();
+      if (read.size) setDrafts((all) => withLibraryDetails(all, read));
       if (failed) setProblem(`${failed} playlist${failed === 1 ? "" : "s"} could not be refreshed. The copies saved here still work.`);
     } catch (cause) {
-      if (lacksYouTube(cause)) setNeedsYouTube(true);
+      if (lacksYouTube(cause)) { setNeedsYouTube(true); setPlaylists((existing) => withoutStale(existing, now)); }
       else setProblem(cause instanceof Error ? cause.message : "Your playlists could not be loaded.");
     } finally { setSync(null); }
   }, [api, setProblem]);
@@ -153,7 +158,8 @@ export function useJev(report: (problem: string) => void) {
   }, []);
   useEffect(() => {
     if (!loaded || sync) return;
-    const incomplete = playlists.flatMap((playlist) => playlist.videos).filter((video) => !video.complete && !enriched.current.has(video.id));
+    const now = Date.now();
+    const incomplete = playlists.flatMap((playlist) => playlist.videos).filter((video) => (!video.complete || isStale(video, now)) && !enriched.current.has(video.id));
     if (incomplete.length) queueMicrotask(() => void enrich(incomplete));
   }, [loaded, sync, playlists, enrich]);
 

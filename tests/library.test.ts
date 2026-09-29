@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Video } from "@/lib/learning";
 import {
-  addBookmark, emptyProgress, migrateLegacy, parseLibraryValue, playlistSignature, videosById, momentsFor, parseLibrary, parseProgress, queueOrder, savePosition, setMembership, syncPlaylists, toggleChapterDone, toggleStatus, videoState,
-} from "@/lib/library";
+  addBookmark, emptyProgress, migrateLegacy, parseLibraryValue, playlistSignature, videosById, momentsFor, parseLibrary, parseProgress, queueOrder, savePosition, setMembership, syncPlaylists, toggleChapterDone, toggleStatus, videoState, withoutStale } from "@/lib/library";
 
 const video = (id: string, extra: Partial<Video> = {}): Video => ({ id, title: `Video ${id}`, channel: "c", description: "d", thumbnail: "", ...extra });
 
@@ -97,5 +96,24 @@ describe("queue state", () => {
       ["Proof", 200, 600, false],
       ["bookmark", 250],
     ]);
+  });
+});
+
+describe("when YouTube access is gone", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.UTC(2027, 0, 31);
+  const stored = (id: string, age: number) => ({ id, title: id, channel: "c", description: "", thumbnail: "", complete: true, fetchedAt: now - age * day });
+
+  it("removes copies read more than 29 days ago, and a playlist left with nothing", () => {
+    const playlists = [
+      { id: "p1", title: "Mixed", sourcePlaylistId: "PL1", signature: "2:a,b", videos: [stored("a", 40), stored("b", 3)] },
+      { id: "p2", title: "All old", sourcePlaylistId: "PL2", signature: "1:c", videos: [stored("c", 31)] },
+      { id: "p3", title: "All recent", sourcePlaylistId: "PL3", signature: "1:d", videos: [stored("d", 29)] },
+    ];
+    const kept = withoutStale(playlists, now);
+    expect(kept.map((playlist) => [playlist.id, playlist.videos.map((video) => video.id)])).toEqual([["p1", ["b"]], ["p3", ["d"]]]);
+    // The shortened playlist is read in full once access returns; the untouched one is the same object.
+    expect(kept[0].signature).toBeUndefined();
+    expect(kept[1]).toBe(playlists[2]);
   });
 });

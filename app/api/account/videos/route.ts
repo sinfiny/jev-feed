@@ -1,6 +1,5 @@
 import { videoIdFrom } from "@/lib/youtube-playlist";
-import { channelIdsFrom, channelsFrom, videosFrom } from "@/lib/youtube-account";
-import { failure, googleToken, youtube } from "../google";
+import { failure, googleToken, videoDetails } from "../google";
 
 export const runtime = "edge";
 
@@ -15,10 +14,6 @@ export async function GET(request: Request) {
   const ids = [...new Set((new URL(request.url).searchParams.get("ids") ?? "").split(",").map(videoIdFrom).filter(Boolean))];
   if (!ids.length || ids.length > MAX_IDS) return Response.json({ error: `Send between 1 and ${MAX_IDS} video ids.` }, { status: 400 });
   try {
-    const token = await googleToken(request);
-    const response = await youtube(token, "videos", { part: "snippet,contentDetails,statistics", id: ids.join(","), maxResults: String(MAX_IDS) });
-    const channelIds = channelIdsFrom(response);
-    const channels = channelIds.length ? channelsFrom(await youtube(token, "channels", { part: "statistics,snippet", id: channelIds.join(","), maxResults: String(MAX_IDS) }).catch(() => null)) : undefined;
-    return Response.json({ videos: videosFrom(response, channels) }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({ videos: await videoDetails(await googleToken(request), ids) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return failure(error); }
 }

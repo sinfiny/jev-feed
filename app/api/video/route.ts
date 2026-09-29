@@ -75,7 +75,8 @@ export async function GET(request: Request) {
   if (ids.length > MAX_IDS) return Response.json({ error: `Send at most ${MAX_IDS} videos per request.` }, { status: 400 });
   if (params.get("debug") === "1") return Response.json({ id: ids[0], attempts: await debugVideo(ids[0]) }, { headers: { "Cache-Control": "no-store" } });
 
-  const videos = (await Promise.all(ids.map(fetchVideo))).filter((video): video is Video => video !== null);
+  const fetchedAt = Date.now();
+  const videos = (await Promise.all(ids.map(fetchVideo))).flatMap((video) => video ? [{ ...video, fetchedAt }] : []);
   if (!videos.length) return Response.json({ error: "That video could not be read. It may be private or removed." }, { status: 404 });
   return Response.json({ videos }, { headers: { "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800" } });
 }

@@ -21,7 +21,17 @@ export type Video = {
   keywords?: string[];
   /** Set once a source with the full description (Data API or /api/video) has been read, so enrichment never repeats. */
   complete?: boolean;
+  /** When these details were read from YouTube. Stamped by the API routes that read them. */
+  fetchedAt?: number;
 };
+
+/** YouTube's API policy lets details be kept for 30 days before they are read again or removed. A day of slack. */
+const DETAILS_MAX_AGE = 29 * 24 * 60 * 60 * 1000;
+/** Copies saved before videos carried `fetchedAt` count as read on the day signed-in libraries and published feeds shipped. */
+const FETCHED_BEFORE_STAMPS = Date.UTC(2026, 8, 29);
+
+export const fetchedAt = (video: Pick<Video, "fetchedAt">) => video.fetchedAt ?? FETCHED_BEFORE_STAMPS;
+export const isStale = (video: Pick<Video, "fetchedAt">, now: number) => now - fetchedAt(video) > DETAILS_MAX_AGE;
 
 export type PlaylistProgress = { mastery: number; completed: string[] };
 export type LearningState = Record<string, PlaylistProgress>;

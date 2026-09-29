@@ -30,11 +30,13 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className={heading}>What stays on your device</h2>
         <p>Your playlist copies, lenses, cached question answers, and unpublished feed drafts are saved in your browser&apos;s IndexedDB. Playback position, completion, bookmarks, and speed are saved in localStorage. Jev does not currently sync this personal workspace between devices.</p>
+        <p>Jev reads video details from YouTube again at least every 30 days. If Jev can no longer read your YouTube account, playlist copies older than that are removed from your browser when you open Jev. Your progress and bookmarks stay.</p>
       </section>
 
       <section className="space-y-2">
         <h2 className={heading}>Feeds you publish</h2>
         <p>If you publish a feed, Jev saves its title, notes, chosen video details, lens, any included question answers, and your first name as its author. Anyone with the feed link can view that snapshot. The feed record also holds your Clerk user ID so only you can update or take it down.</p>
+        <p>While a feed is in use, Jev reads its video details from YouTube again at least every 30 days, using the permission of the person who published it. A video that was removed from YouTube or made private leaves the feed.</p>
       </section>
 
       <section className="space-y-2">
@@ -52,7 +54,7 @@ export default function PrivacyPage() {
 
       <section className="space-y-2">
         <h2 className={heading}>YouTube and Google</h2>
-        <p>When a YouTube video plays, the embedded YouTube player communicates directly with YouTube under <a className={link} href="https://policies.google.com/privacy">Google&apos;s Privacy Policy</a>. You can revoke Jev&apos;s Google access in your <a className={link} href="https://myaccount.google.com/connections">Google Account connections</a>. Revoking access stops future authorized requests; it does not erase browser copies or a feed you published in Jev.</p>
+        <p>When a YouTube video plays, the embedded YouTube player communicates directly with YouTube under <a className={link} href="https://policies.google.com/privacy">Google&apos;s Privacy Policy</a>. You can revoke Jev&apos;s Google access in your <a className={link} href="https://myaccount.google.com/connections">Google Account connections</a>. Revoking access stops future authorized requests. Playlist copies in your browser are removed as they pass 30 days old. A feed you published stays until you take it down.</p>
       </section>
 
       <section className="space-y-2">
@@ -63,7 +65,7 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className={heading}>How long Jev keeps things</h2>
         <ul className="list-disc space-y-1 pl-5">
-          <li><b className="text-[var(--paper)]">On your device:</b> until you remove it or clear Jev&apos;s site data in your browser.</li>
+          <li><b className="text-[var(--paper)]">On your device:</b> until you remove it or clear Jev&apos;s site data in your browser. Video details are read again or removed within 30 days.</li>
           <li><b className="text-[var(--paper)]">Your account:</b> until you ask for it to be deleted.</li>
           <li><b className="text-[var(--paper)]">Your playlists and likes:</b> Jev&apos;s Worker reads them for you and passes them to your browser. It keeps no copy.</li>
           <li><b className="text-[var(--paper)]">A published feed:</b> until you take it down, which deletes the snapshot.</li>
