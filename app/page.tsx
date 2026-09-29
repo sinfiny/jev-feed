@@ -1,5 +1,6 @@
 "use client";
 
+import { isTyping } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserButton, useAuth, useUser } from "@clerk/react";
 import { Clapperboard, Library as LibraryIcon, RefreshCw, Sparkles } from "lucide-react";
@@ -22,7 +23,6 @@ const SAVE_EVERY_SECONDS = 5;
 type View = "watch" | "library" | "studio";
 type Toast = { text: string; error?: boolean; action?: { label: string; run: () => void } };
 
-const isTyping = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 
 export default function Home() {
   const { isLoaded, isSignedIn } = useAuth();

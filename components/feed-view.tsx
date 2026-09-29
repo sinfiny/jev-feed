@@ -1,5 +1,6 @@
 "use client";
 
+import { isTyping } from "@/lib/utils";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Bookmark, Check, ChevronDown, ExternalLink, Moon, Play, RotateCcw, X } from "lucide-react";
@@ -46,7 +47,6 @@ const hoursAndMinutes = (seconds: number) => {
   const hours = Math.floor(seconds / 3600), minutes = Math.round((seconds % 3600) / 60);
   return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 };
-const isTyping = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 const isPressable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest("button, a, [role=slider]");
 const tint = (tone: string) => ({ "--tone": tone }) as CSSProperties;
 
@@ -228,8 +228,6 @@ function Feed({ feed, pending, youtubeUrl }: { feed: PublishedFeed; pending: num
         p: () => { if (previous) open(previous); },
         "<": () => stepRate(-1),
         ">": () => stepRate(1),
-        // The deck owns fullscreen; its button is pressed so native and window fullscreen behave the same.
-        f: () => deck.current?.querySelector<HTMLButtonElement>("button[title^='Fullscreen']")?.click(),
       };
       const action = actions[event.key.toLowerCase()];
       if (action) { event.preventDefault(); action(); }

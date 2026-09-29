@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import { Bookmark, Maximize2, Minimize2, Pause, Play, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import { formatDuration, type Video } from "@/lib/learning";
 import { SPEEDS, type Moment } from "@/lib/library";
+import { isTyping } from "@/lib/utils";
 import { YouTubePlayer, type Clip, type PlaybackState, type PlayerHandle } from "@/components/youtube-player";
 
 type Props = {
@@ -73,6 +74,14 @@ export function PlayerDeck({ player, clip, video, moments, rate, onRate, onEnded
     if (full === "window") { setFull("off"); return; }
     try { await wrap.current!.requestFullscreen(); } catch { setFull("window"); }
   }
+  // F toggles fullscreen wherever the deck is, unless a text field has the key.
+  const toggleRef = useRef(toggleFull);
+  useEffect(() => { toggleRef.current = toggleFull; });
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key.toLowerCase() === "f" && !event.metaKey && !event.ctrlKey && !event.altKey && !isTyping(event.target)) { event.preventDefault(); void toggleRef.current(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   useEffect(() => {
     if (full !== "window") return;
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setFull("off"); };
